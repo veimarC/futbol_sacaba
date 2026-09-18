@@ -1,0 +1,17 @@
+/*
+ * Punto de entrada de los estilos propios de Fútbol Sacaba.
+ * Cada pantalla conserva su CSS en un archivo pequeño y fácil de localizar.
+ */
+@import './base.css';
+@import './pages/profile.css';
+@import './pages/public-index.css';
+@import './pages/public-show.css';
+@import './pages/championship-discover.css';
+@import './pages/championship-show.css';
+@import './pages/notifications.css';
+@import './pages/referee-explore.css';
+@import './pages/referee-panel.css';
+@import './pages/match-form.css';
+@import './pages/player-form.css';
+@import './pages/team-form.css';
+@import './pages/team-index.css';

@@ -1,0 +1,4 @@
+.profile-avatar{display:grid;place-items:center;width:64px;height:64px;flex:0 0 64px;border-radius:20px;background:rgba(255,138,0,.18);border:1px solid rgba(255,138,0,.55);color:#ff9e2b;font-size:2rem}
+    .profile-readonly{display:flex;align-items:center;background:rgba(255,255,255,.06);color:#fff}
+    .profile-password{padding:1.25rem;border:1px solid rgba(255,255,255,.16);border-radius:1rem;background:rgba(0,0,0,.12)}
+    @media(max-width:575.98px){.profile-avatar{width:54px;height:54px;flex-basis:54px;border-radius:16px}.contenedor-transparente{padding:1.25rem}}

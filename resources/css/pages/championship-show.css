@@ -1,0 +1,85 @@
+.modal-content .form-label, .modal-content .form-text { color:#212529 !important; }
+    .modal-content textarea.form-control { color:#212529 !important; background:#fff !important; border-color:#adb5bd !important; }
+    .modal-content textarea.form-control::placeholder { color:#6c757d !important; opacity:1; }
+    .delegate-enrollment { padding:1.25rem; border:1px solid rgba(255,190,65,.4); border-radius:1rem; background:linear-gradient(135deg,rgba(255,133,0,.12),rgba(255,255,255,.08)); }
+    .referee-enrollment,.referee-management { padding:1.25rem; border:1px solid rgba(255,190,65,.4); border-radius:1rem; background:linear-gradient(135deg,rgba(15,48,107,.55),rgba(255,133,0,.1)); }
+    .application-result,.referee-request { padding:1rem; border:1px solid rgba(255,255,255,.18); border-radius:.9rem; background:rgba(255,255,255,.08); }
+    .referee-actions { min-width:min(100%,360px); }
+    .approved-referee { display:inline-flex; align-items:center; gap:.4rem; padding:.55rem .75rem; border:1px solid rgba(255,255,255,.16); border-radius:999px; background:rgba(255,255,255,.08); font-size:.85rem; }
+    .enrollment-team,.enrollment-empty { padding:1rem; border:1px solid rgba(255,255,255,.18); border-radius:.9rem; background:rgba(255,255,255,.08); }
+    .team-mini-shield { display:grid; place-items:center; flex:0 0 48px; width:48px; height:48px; overflow:hidden; border-radius:13px; color:#ff9b23; font-size:1.4rem; background:rgba(255,255,255,.13); }
+    .team-mini-shield img { width:100%; height:100%; padding:5px; object-fit:contain; }
+    .championship-team-grid { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:1rem; }
+    .championship-team-grid>div { display:flex; min-width:0; }
+    .team-card { display:flex; align-items:center; flex-direction:column; width:100%; min-height:260px; padding:1.25rem; overflow:hidden; border:1px solid rgba(255,255,255,.16); border-radius:1rem; background:rgba(255,255,255,.07); text-align:center; cursor:pointer; transition:transform .25s ease,border-color .25s ease,background .25s ease,box-shadow .25s ease; }
+    .team-card:hover,.team-card:focus-visible { transform:translateY(-4px); border-color:var(--naranja-vivo); background:rgba(255,255,255,.11); box-shadow:0 16px 32px rgba(0,0,0,.16); }
+    .team-shield { display:grid; place-items:center; flex:0 0 84px; width:84px; height:84px; margin-bottom:.8rem; overflow:hidden; border-radius:1rem; color:rgba(255,255,255,.5); font-size:2.5rem; background:rgba(255,255,255,.1); }
+    .team-shield img { width:100%; height:100%; padding:.65rem; object-fit:contain; }
+    .team-name { margin:0 0 .55rem; font-size:1.2rem; font-weight:800; overflow-wrap:anywhere; }
+    .team-player-count { margin:0; padding:.35rem .65rem; border-radius:999px; background:rgba(255,255,255,.1); font-size:.82rem; opacity:.85; }
+    .team-actions { width:100%; margin-top:auto !important; padding-top:.85rem; flex-wrap:wrap; }
+    .championship-tabs { max-width:100%; }
+    .championship-tab { min-width:0; }
+    .championship-qualification { display:flex; align-items:flex-end; justify-content:space-between; gap:1rem; }
+    .qualification-control { width:min(100%,440px); padding:.85rem 1rem; border:1px solid rgba(255,255,255,.18); border-radius:.8rem; background:rgba(255,255,255,.08); }
+    .qualification-control>label { display:block; margin-bottom:.4rem; font-size:.82rem; font-weight:700; }
+    .qualification-control-row { display:flex; gap:.55rem; }
+    .qualification-control .form-select { min-width:0; color:#17212b; background-color:#fff; }
+    .qualification-control small { display:block; margin-top:.4rem; opacity:.75; }
+    .qualification-options { display:grid; gap:.45rem; margin-top:.8rem; padding-top:.7rem; border-top:1px solid rgba(255,255,255,.14); }
+    .qualification-options .form-check { min-height:1.35rem; margin:0; }
+    .qualification-options .form-check-label { font-size:.82rem; font-weight:600; cursor:pointer; }
+    .qualification-summary { display:flex; align-items:center; justify-content:space-between; gap:1rem; padding:.7rem .9rem; border-radius:.7rem; background:rgba(255,255,255,.1); }
+    .qualification-summary div { display:grid; gap:.15rem; }
+    .qualification-summary span,.qualification-summary small { font-size:.78rem; opacity:.78; }
+    .qualification-summary strong { color:#ffbd5c; font-size:1rem; }
+    .qualification-summary>i { color:#ffbd5c; }
+    #tab .group-table-card .table-responsive { scrollbar-width:none; -ms-overflow-style:none; }
+    #tab .group-table-card .table-responsive::-webkit-scrollbar { display:none; }
+    .sports-empty { display:grid; place-items:center; gap:.35rem; min-height:190px; padding:1.5rem; border:1px dashed rgba(255,255,255,.25); border-radius:1rem; background:rgba(255,255,255,.06); text-align:center; }
+    .sports-empty i { color:#ffbd5c; font-size:2.2rem; }
+    .sports-empty span { font-size:.85rem; opacity:.72; }
+    .sports-ranking-row { display:grid; grid-template-columns:auto auto minmax(0,1fr) auto; align-items:center; gap:.9rem; padding:.8rem 1rem; border-bottom:1px solid rgba(255,255,255,.14); background:rgba(255,255,255,.06); }
+    .sports-ranking-row:first-of-type { border-radius:.9rem .9rem 0 0; }
+    .sports-ranking-row:last-child { border-bottom:0; border-radius:0 0 .9rem .9rem; }
+    .sports-ranking-row>div { display:grid; min-width:0; }
+    .sports-ranking-row small { opacity:.7; }
+    .sports-ranking-row>b { color:#ffbd5c; }
+    .knockout-match-grid { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:1rem; }
+    .knockout-match-card { display:grid; grid-template-columns:minmax(0,1fr) auto minmax(0,1fr); align-items:center; gap:.8rem; padding:1rem; border:1px solid rgba(255,255,255,.17); border-radius:.9rem; background:rgba(255,255,255,.07); }
+    .knockout-match-card>div { display:flex; align-items:center; gap:.55rem; min-width:0; }
+    .knockout-match-card>div:nth-of-type(2) { flex-direction:row-reverse; text-align:right; }
+    .knockout-match-card strong { overflow-wrap:anywhere; }
+    .knockout-match-card>small { grid-column:1/-1; text-align:center; opacity:.7; }
+    .knockout-score { color:#ffbd5c; font-size:1.05rem; font-weight:800; }
+    .sports-table-wrap { overflow:hidden; border-radius:.9rem; }
+    .control-result { display:flex; align-items:center; justify-content:space-between; gap:1rem; padding:1.1rem 1.25rem; border:1px solid rgba(255,255,255,.18); border-radius:1rem; background:rgba(255,255,255,.08); }
+    .control-result-score { color:#ffbd5c; font-size:1.5rem; }
+    @media(max-width:991px) { .championship-team-grid { grid-template-columns:repeat(2,minmax(0,1fr)); } }
+    @media(max-width:575px) {
+        .championship-header { align-items:flex-start !important; flex-direction:column; }
+        .championship-header>div:nth-child(2) { min-width:0; }
+        .championship-header h2 { font-size:1.35rem; overflow-wrap:anywhere; }
+        .championship-header>.ms-auto { width:100%; margin-left:0 !important; }
+        .referee-enrollment,.referee-management,.delegate-enrollment { padding:.9rem; }
+        .referee-actions { min-width:0; width:100%; }
+        .teams-heading { align-items:flex-start !important; flex-direction:column; gap:.65rem; }
+        .team-card { min-height:0; padding:1rem; }
+        .championship-team-grid { grid-template-columns:1fr; gap:1rem; }
+        .team-shield { flex-basis:72px; width:72px; height:72px; margin-bottom:.65rem; }
+        .team-name { font-size:1.05rem; }
+        .team-actions .btn { min-height:38px; }
+        .championship-tabs { display:grid !important; grid-template-columns:repeat(2,minmax(0,1fr)); gap:.6rem !important; }
+        .championship-tab { width:100%; padding:.7rem .45rem !important; font-size:.9rem; }
+        .championship-tab i { margin-right:.35rem !important; }
+        .championship-qualification { align-items:stretch; flex-direction:column; }
+        .qualification-control { width:100%; }
+        .qualification-control-row { align-items:stretch; flex-direction:column; }
+        .knockout-match-grid { grid-template-columns:1fr; }
+        .knockout-match-card { gap:.5rem; padding:.8rem; }
+        .sports-ranking-row { grid-template-columns:auto auto minmax(0,1fr); gap:.65rem; padding:.75rem; }
+        .sports-ranking-row>b { grid-column:3; }
+        .tab-pane>.d-flex:first-child { align-items:flex-start !important; flex-direction:column; gap:.6rem; }
+        .control-result { align-items:stretch; flex-direction:column; }
+        .control-result .btn { width:100%; }
+    }

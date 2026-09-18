@@ -1,0 +1,11 @@
+select.form-select option {
+    background: #ffffff !important;
+    color: #212529 !important;
+    padding: 8px;
+}
+select.form-select option:checked {
+    background: var(--naranja-vivo) !important;
+    color: white !important;
+}
+.match-roster-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:1rem}.match-roster-card{display:flex;flex-direction:column;min-width:0;padding:1.1rem;border:1px solid rgba(255,255,255,.18);border-radius:1rem;background:rgba(255,255,255,.07)}.match-roster-card>header{display:grid;grid-template-columns:auto minmax(0,1fr) auto;align-items:center;gap:.75rem}.match-roster-card h3{margin:0;font-size:1.1rem}.match-roster-card header small{opacity:.7}.roster-player-list{display:grid;gap:.35rem;margin-top:1rem}.roster-player-list>div{display:flex;align-items:center;gap:.7rem;padding:.5rem .65rem;border-radius:.55rem;background:rgba(255,255,255,.07)}.roster-player-list b{display:grid;place-items:center;flex:0 0 34px;width:34px;height:34px;border-radius:50%;color:#17212b;background:#ffbd5c}.match-roster-card>footer{margin-top:auto;padding-top:1rem}.roster-review-actions{display:grid;grid-template-columns:1fr auto auto;gap:.5rem}.roster-empty{min-height:150px;margin-top:1rem}@media(max-width:767px){.match-roster-grid{grid-template-columns:1fr}.roster-review-actions{grid-template-columns:1fr 1fr}.roster-review-actions .form-control{grid-column:1/-1}}
+.match-events-box{padding:1rem;border:1px solid rgba(255,255,255,.18);border-radius:.8rem;background:rgba(255,255,255,.07)}

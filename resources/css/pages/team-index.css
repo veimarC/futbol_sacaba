@@ -1,0 +1,10 @@
+.team-card{display:flex;flex-direction:column;padding:1.25rem;border:1px solid rgba(255,255,255,.18);border-radius:1rem;background:rgba(255,255,255,.08);transition:transform .2s ease,background .2s ease}
+    .team-card:hover{transform:translateY(-4px);background:rgba(255,255,255,.12)}
+    .team-card-head{display:flex;align-items:center;gap:1rem}.min-w-0{min-width:0}
+    .team-shield{display:grid;place-items:center;flex:0 0 78px;width:78px;height:78px;border-radius:18px;background:rgba(255,255,255,.14);font-size:2.6rem;color:rgba(255,255,255,.65);overflow:hidden}
+    .team-shield img{width:100%;height:100%;object-fit:contain;padding:.45rem}
+    .team-stats{display:grid;grid-template-columns:1fr 1fr;gap:.75rem;margin:1.15rem 0}
+    .team-stats span{padding:.75rem;text-align:center;border-radius:.75rem;background:rgba(0,0,0,.13)}
+    .team-stats strong,.team-stats small{display:block}.team-stats strong{font-size:1.25rem}.team-stats small{opacity:.7}
+    .team-empty{padding:3rem 1rem;border:1px dashed rgba(255,255,255,.3);border-radius:1rem;background:rgba(0,0,0,.1)}
+    @media(max-width:575.98px){.team-shield{width:64px;height:64px;flex-basis:64px}.team-card{padding:1rem}}
