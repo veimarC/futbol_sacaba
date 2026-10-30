@@ -6,6 +6,7 @@ use App\Models\Partido;
 use App\Notifications\NotificacionPlataforma;
 use Carbon\Carbon;
 use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Facades\DB;
 
 /** Envía la programación del partido a jugadores y delegados relacionados. */
 class NotificadorWhatsAppPartido
@@ -40,8 +41,8 @@ class NotificadorWhatsAppPartido
                 ->whereNotNull('whatsapp')
                 ->whereNotNull('whatsapp_opt_in_at')
                 ->get()
-                ->each(function ($jugador) use ($parametrosBase, &$entregasAceptadas) {
-                    if ($this->enviarAJugador($jugador, $parametrosBase)) {
+                ->each(function ($jugador) use ($partido, $parametrosBase, &$entregasAceptadas) {
+                    if ($this->enviarUnaVez($partido, $jugador, fn () => $this->enviarAJugador($jugador, $parametrosBase))) {
                         $entregasAceptadas++;
                     }
                 });
@@ -60,7 +61,7 @@ class NotificadorWhatsAppPartido
                     soloBaseDatos: true,
                 ));
 
-                if ($this->enviarADelegado($delegado, $parametrosBase)) {
+                if ($this->enviarUnaVez($partido, $delegado, fn () => $this->enviarADelegado($delegado, $parametrosBase))) {
                     $entregasAceptadas++;
                 }
             }
@@ -71,6 +72,31 @@ class NotificadorWhatsAppPartido
         }
 
         return $entregasAceptadas;
+    }
+
+    private function enviarUnaVez(Partido $partido, object $destinatario, callable $enviar): bool
+    {
+        if (blank($destinatario->whatsapp) || blank($destinatario->whatsapp_opt_in_at)) return false;
+        // La identidad del aviso no depende del rol ni de que sea un recordatorio.
+        $huella = hash('sha256', json_encode([
+            $partido->id, $partido->equipo_local_id, $partido->equipo_visita_id,
+            $partido->fecha->format('Y-m-d'), substr((string) $partido->hora, 0, 5),
+            trim((string) $partido->cancha), preg_replace('/\D+/', '', $destinatario->whatsapp),
+        ]));
+        // La clave unica reserva el envio incluso si dos procesos llegan a la vez.
+        $reservado = DB::table('match_whatsapp_deliveries')->insertOrIgnore([
+            'partido_id' => $partido->id, 'fingerprint' => $huella,
+            'created_at' => now(), 'updated_at' => now(),
+        ]);
+        if (! $reservado) return false;
+        if (! $enviar()) {
+            // Conservar la reserva: un timeout no demuestra que Meta no lo recibio.
+            Log::warning('Aviso de partido sin confirmacion; no se reenvia automaticamente.', ['partido_id' => $partido->id]);
+            return false;
+        }
+        DB::table('match_whatsapp_deliveries')->where('fingerprint', $huella)
+            ->update(['sent_at' => now(), 'updated_at' => now()]);
+        return true;
     }
 
     /** @param array<int, string> $parametrosBase */

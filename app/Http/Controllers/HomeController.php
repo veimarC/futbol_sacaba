@@ -19,7 +19,6 @@ class HomeController extends Controller
     public function index(Request $request)
     {
         $destino = match ($request->user()->rol) {
-            User::ROLE_ARBITRO => 'arbitros.panel',
             User::ROLE_DESARROLLADOR,
             User::ROLE_ORGANIZADOR,
             User::ROLE_DELEGADO => 'campeonatos.index',

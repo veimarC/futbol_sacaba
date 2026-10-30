@@ -19,7 +19,6 @@ class User extends Authenticatable
 
     public const ROLE_DELEGADO = 'delegado';           // Registra jugadores de su equipo
 
-    public const ROLE_ARBITRO = 'arbitro';             // Registra resultados de partidos asignados
 
     public const ROLE_PUBLICO = 'publico';             // Usuario público por defecto
 
@@ -96,19 +95,5 @@ class User extends Authenticatable
         $this->save();
 
         return $this;
-    }
-
-    /** Campeonatos a los que el usuario se postuló como árbitro. */
-    public function campeonatosComoArbitro()
-    {
-        return $this->belongsToMany(Campeonato::class, 'arbitro_campeonato', 'arbitro_id', 'campeonato_id')
-            ->withPivot('estado', 'mensaje', 'motivo_respuesta', 'gestionado_por', 'gestionado_at')
-            ->withTimestamps();
-    }
-
-    /** Partidos que debe dirigir. */
-    public function partidosAsignados()
-    {
-        return $this->hasMany(Partido::class, 'arbitro_id');
     }
 }

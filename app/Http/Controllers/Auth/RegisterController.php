@@ -30,7 +30,7 @@ class RegisterController extends Controller
             // Permitimos ahora que el usuario seleccione 'organizador' desde el formulario de registro.
             // Atención: permitir este rol en el registro público significa que cualquiera puede crearse como organizador.
             // Se recomienda añadir un flujo de aprobación en producción si se quiere restringir este rol.
-            'rol' => ['required', 'in:delegado,organizador,arbitro'],
+            'rol' => ['required', 'in:delegado,organizador'],
         ], [
             'whatsapp.regex' => 'Ingresa un celular boliviano válido de 8 dígitos, por ejemplo 70000000.',
         ]);

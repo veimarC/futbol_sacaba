@@ -39,7 +39,7 @@
                     @endif
                     <input type="file" name="escudo" class="form-control @error('escudo') is-invalid @enderror" accept="image/jpeg,image/png,image/webp">
                     @error('escudo')<span class="invalid-feedback">{{ $message }}</span>@enderror
-                    <div class="form-text">Déjalo vacío para conservar el escudo actual. Las imágenes nuevas se optimizan en Cloudinary. Máximo 2 MB.</div>
+                    <div class="form-text">Déjalo vacío para conservar el escudo actual. Máximo 2 MB.</div>
                 </div>
 
                 <div class="d-flex gap-3">

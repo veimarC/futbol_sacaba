@@ -9,7 +9,13 @@ class CampeonatoPolicy
 {
     public function before(User $user): ?bool { return $user->esDesarrollador() ? true : null; }
     public function viewAny(User $user): bool { return true; }
-    public function view(User $user, Campeonato $campeonato): bool { return true; }
+    public function downloadRules(User $user, Campeonato $campeonato): bool { return $this->esCreador($user, $campeonato); }
+    public function downloadFixture(User $user, Campeonato $campeonato): bool
+    {
+        return $this->esCreador($user, $campeonato)
+            || ($user->rol === User::ROLE_DELEGADO && $campeonato->aprobacion_estado === 'aprobado');
+    }
+    public function view(User $user, Campeonato $campeonato): bool { return $campeonato->aprobacion_estado === 'aprobado' || $this->esCreador($user, $campeonato); }
     public function create(User $user): bool { return $user->rol === User::ROLE_ORGANIZADOR; }
     public function update(User $user, Campeonato $campeonato): bool { return $this->esCreador($user, $campeonato); }
     public function delete(User $user, Campeonato $campeonato): bool { return $this->esCreador($user, $campeonato); }

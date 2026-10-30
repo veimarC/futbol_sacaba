@@ -9,9 +9,11 @@
 @import './pages/championship-discover.css';
 @import './pages/championship-show.css';
 @import './pages/notifications.css';
-@import './pages/referee-explore.css';
-@import './pages/referee-panel.css';
 @import './pages/match-form.css';
 @import './pages/player-form.css';
 @import './pages/team-form.css';
 @import './pages/team-index.css';
+
+@import './transparent-surfaces.css';
+
+@import './pages/match-sheet.css';

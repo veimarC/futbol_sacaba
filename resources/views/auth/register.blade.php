@@ -40,7 +40,6 @@
                     <select id="rol" class="form-select form-select-lg @error('rol') is-invalid @enderror" name="rol" required>
                         <option value="delegado" {{ old('rol') === 'delegado' ? 'selected' : '' }}>Delegado de equipo</option>
                         <option value="organizador" {{ old('rol') === 'organizador' ? 'selected' : '' }}>Organizador de campeonatos</option>
-                        <option value="arbitro" {{ old('rol') === 'arbitro' ? 'selected' : '' }}>Árbitro</option>
                     </select>
                     <div class="form-text text-white-50">Si solo quieres consultar campeonatos, no necesitas crear una cuenta.</div>
                     @error('rol')<span class="invalid-feedback"><strong>{{ $message }}</strong></span>@enderror

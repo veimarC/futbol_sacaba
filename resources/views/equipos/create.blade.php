@@ -54,7 +54,7 @@
                     <label class="form-label">Escudo (opcional)</label>
                     <input type="file" name="escudo" class="form-control @error('escudo') is-invalid @enderror" accept="image/jpeg,image/png,image/webp">
                     @error('escudo')<span class="invalid-feedback">{{ $message }}</span>@enderror
-                    <div class="form-text">Sube una imagen JPG, PNG o WebP de hasta 2 MB. Se guardará y optimizará en Cloudinary.</div>
+                    <div class="form-text">Sube una imagen JPG, PNG o WebP de hasta 2 MB.</div>
                 </div>
                 <div class="d-flex gap-3">
                     <button type="submit" class="btn btn-naranja">Guardar</button>

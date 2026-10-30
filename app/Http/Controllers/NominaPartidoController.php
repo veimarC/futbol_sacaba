@@ -22,15 +22,23 @@ class NominaPartidoController extends Controller
     public function index(Partido $partido)
     {
         $this->autorizarConsulta($partido);
-        $partido->load(['campeonato', 'equipoLocal', 'equipoVisita', 'nominas.jugadores.jugador']);
+        $partido->load(['campeonato', 'equipoLocal', 'equipoVisita', 'nominas.jugadores.jugador', 'incidencias.jugador', 'fase']);
         $equipos = collect([$partido->equipoLocal, $partido->equipoVisita]);
         $usuario = auth()->user();
         $puedeRegistrarResultado = $usuario->esDesarrollador()
-            || ($usuario->rol === User::ROLE_ORGANIZADOR && (int) $partido->campeonato->usuario_creador === (int) $usuario->id)
-            || ($usuario->rol === User::ROLE_ARBITRO && (int) $partido->arbitro_id === (int) $usuario->id);
+            || ($usuario->rol === User::ROLE_ORGANIZADOR && (int) $partido->campeonato->usuario_creador === (int) $usuario->id);
         $nominasAprobadas = $partido->nominas->where('estado', 'aprobada')->count();
 
-        return view('partidos.nominas', compact('partido', 'equipos', 'puedeRegistrarResultado', 'nominasAprobadas'));
+        $desempate = app(\App\Services\ResolucionEliminatoriaService::class)->contexto($partido);
+        return view('partidos.nominas', compact('partido', 'equipos', 'puedeRegistrarResultado', 'nominasAprobadas', 'desempate'));
+    }
+
+    public function pdf(Partido $partido, \App\Services\DocumentoPdfService $pdf)
+    {
+        $this->autorizarMesa($partido);
+        $partido->load(['campeonato', 'equipoLocal', 'equipoVisita', 'nominas.jugadores.jugador', 'incidencias', 'fase']);
+        $equipos = collect([$partido->equipoLocal, $partido->equipoVisita]);
+        return $pdf->descargar('pdf.planilla', compact('partido', 'equipos'), "planilla-campeonato-{$partido->campeonato_id}-partido-{$partido->numero_campeonato}.pdf");
     }
 
     public function editar(Partido $partido, Equipo $equipo)
@@ -78,11 +86,15 @@ class NominaPartidoController extends Controller
         }
 
         $esMesa = $this->esMesa($partido);
-        if ($esMesa && $seleccionados->count() < $partido->campeonato->jugadores_cancha) {
-            return back()->withErrors(['dorsales' => "La nómina necesita al menos {$partido->campeonato->jugadores_cancha} jugadores."])->withInput();
+        if ($esMesa && $seleccionados->count() < $partido->campeonato->minimo_para_jugar) {
+            return back()->withErrors(['dorsales' => "La nómina necesita al menos {$partido->campeonato->minimo_para_jugar} jugadores."])->withInput();
         }
 
         DB::transaction(function () use ($partido, $equipo, $seleccionados, $esMesa) {
+            $actual = Partido::whereKey($partido->id)->lockForUpdate()->firstOrFail();
+            abort_if($actual->estado !== 'programado', 422, 'La nómina ya no puede modificarse.');
+            $existente = $actual->nominas()->where('equipo_id', $equipo->id)->first();
+            abort_if($existente?->estado === 'aprobada' && ! $esMesa, 422, 'La Mesa de control ya aprobó esta nómina.');
             $nomina = NominaPartido::updateOrCreate(
                 ['partido_id' => $partido->id, 'equipo_id' => $equipo->id],
                 [
@@ -126,13 +138,14 @@ class NominaPartidoController extends Controller
     public function gestionar(Request $request, Partido $partido, NominaPartido $nomina)
     {
         $this->autorizarMesa($partido);
+        abort_if($partido->estado !== 'programado', 422, 'El partido ya fue finalizado.');
         abort_unless((int) $nomina->partido_id === (int) $partido->id, 404);
         $datos = $request->validate([
             'estado' => ['required', 'in:aprobada,rechazada'],
             'motivo_respuesta' => ['nullable', 'string', 'max:500'],
         ]);
-        if ($datos['estado'] === 'aprobada' && $nomina->jugadores()->count() < $partido->campeonato->jugadores_cancha) {
-            return back()->withErrors(['error' => "La nómina necesita al menos {$partido->campeonato->jugadores_cancha} jugadores."]);
+        if ($datos['estado'] === 'aprobada' && $nomina->jugadores()->count() < $partido->campeonato->minimo_para_jugar) {
+            return back()->withErrors(['error' => "La nómina necesita al menos {$partido->campeonato->minimo_para_jugar} jugadores."]);
         }
 
         $nomina->update([
@@ -161,7 +174,6 @@ class NominaPartidoController extends Controller
             && Equipo::whereIn('id', $equipos)->where('delegado_id', $user->id)->exists();
         $permitido = $user->esDesarrollador()
             || ($user->rol === User::ROLE_ORGANIZADOR && (int) $partido->campeonato->usuario_creador === (int) $user->id)
-            || ($user->rol === User::ROLE_ARBITRO && (int) $partido->arbitro_id === (int) $user->id)
             || $delegadoParticipante;
         abort_unless($permitido, 403);
     }

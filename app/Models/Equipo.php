@@ -2,7 +2,6 @@
 
 namespace App\Models;
 
-use App\Services\CloudinaryImageService;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 
@@ -23,16 +22,11 @@ class Equipo extends Model
 
     // campeonato_id se conserva para instalaciones antiguas; las nuevas
     // inscripciones siempre deben escribirse también en campeonato_equipo.
-    protected $fillable = ['nombre', 'campeonato_id', 'delegado_id', 'ciudad', 'escudo', 'escudo_cloudinary_id'];
+    protected $fillable = ['nombre', 'campeonato_id', 'delegado_id', 'ciudad', 'escudo'];
 
-    /** URL optimizada de Cloudinary o, para registros antiguos, del disco local. */
+    /** URL pública de la imagen almacenada en el disco local. */
     public function getEscudoUrlAttribute(): ?string
     {
-        if ($this->escudo_cloudinary_id) {
-            return app(CloudinaryImageService::class)
-                ->urlOptimizada($this->escudo_cloudinary_id, 320, 320);
-        }
-
         return $this->escudo
             ? asset('storage/'.ltrim($this->escudo, '/'))
             : null;

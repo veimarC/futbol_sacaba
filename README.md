@@ -7,6 +7,30 @@
 <a href="https://packagist.org/packages/laravel/framework"><img src="https://img.shields.io/packagist/l/laravel/framework" alt="License"></a>
 </p>
 
+## Imágenes de la plataforma
+
+Las fotos, escudos y portadas se guardan en el disco público local, dentro de
+`storage/app/public`. En una instalación nueva ejecuta `php artisan storage:link`
+para publicarlas y comprueba que el servidor pueda escribir en esa carpeta.
+Incluye estos archivos en las copias de seguridad junto con la base de datos.
+
+La integración de Cloudinary fue retirada. Las imágenes que solo existan en ese
+servicio deben volver a subirse desde los formularios. La migración de limpieza
+retira las tres columnas de identificadores externos sin modificar las rutas locales.
+Las migraciones históricas se conservan para instalaciones y reversiones. La documentación académica y sus diagramas describen la versión
+anterior y pueden mencionar la integración retirada.
+
+## Documentos PDF
+
+La Mesa de control permite descargar la planilla del partido; la agenda permite
+descargar los encuentros de cada fecha, incluidos los pendientes de programación.
+Las planillas de partidos sin finalizar llevan la marca «Provisional».
+Los documentos respetan los permisos de consulta y usan las imágenes locales.
+
+Ejecuta `composer install` al actualizar la instalación. PHP debe tener habilitada
+la extensión GD (`extension=gd` en `php.ini`) para incluir fotos y escudos.
+Después de cambiar `php.ini`, reinicia Apache desde XAMPP.
+
 ## About Laravel
 
 Laravel is a web application framework with expressive, elegant syntax. We believe development must be an enjoyable and creative experience to be truly fulfilling. Laravel takes the pain out of development by easing common tasks used in many web projects, such as:

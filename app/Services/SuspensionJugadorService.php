@@ -43,6 +43,8 @@ class SuspensionJugadorService
 
     private function clave(Partido $partido): string
     {
-        return ($partido->fecha?->format('Ymd') ?? '99999999').sprintf('%010d', $partido->id);
+        return ($partido->fecha?->format('Ymd') ?? '99999999')
+            .str_replace(':', '', substr($partido->hora ?: '23:59', 0, 5))
+            .sprintf('%010d', $partido->id);
     }
 }

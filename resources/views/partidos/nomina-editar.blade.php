@@ -8,13 +8,15 @@
         <p class="opacity-75 mb-0">Escribe el dorsal solamente en los jugadores convocados.</p>
     </div>
 
+    <p class="fw-bold">Mínimo para jugar: {{ $partido->campeonato->minimo_para_jugar }} jugadores habilitados. En cancha: {{ $partido->campeonato->jugadores_cancha }}.</p>
+
     @if($errors->any())<div class="alert alert-danger">{{ $errors->first() }}</div>@endif
 
-    <form method="POST" action="{{ route('partidos.nominas.guardar', [$partido, $equipo]) }}">
+    <form data-roster-numbers method="POST" action="{{ route('partidos.nominas.guardar', [$partido, $equipo]) }}">
         @csrf @method('PUT')
         <div class="table-responsive sports-table-wrap">
             <table class="table table-dark align-middle mb-0">
-                <thead><tr><th>Jugador</th><th>Posición</th><th style="width:140px">Dorsal</th><th>Disponibilidad</th></tr></thead>
+                <thead><tr><th>Jugador</th><th style="width:140px">Dorsal</th><th>Disponibilidad</th></tr></thead>
                 <tbody>
                     @foreach($jugadores as $jugador)
                         @php $suspendido = $suspendidos->contains($jugador->id); @endphp
@@ -28,8 +30,9 @@
                                     </div>
                                 </div>
                             </td>
-                            <td>{{ $jugador->posicion ?: 'Sin definir' }}</td>
-                            <td><input type="number" name="dorsales[{{ $jugador->id }}]" min="1" max="99" class="form-control" value="{{ old('dorsales.'.$jugador->id, $dorsales->get($jugador->id)) }}" placeholder="—" @disabled($suspendido)></td>
+                            <td><input data-roster-number aria-describedby="dorsal-error-{{ $jugador->id }}" aria-label="Dorsal de {{ $jugador->nombre }} {{ $jugador->apellido }}" type="number" name="dorsales[{{ $jugador->id }}]" min="1" max="99" class="form-control" value="{{ old('dorsales.'.$jugador->id, $dorsales->get($jugador->id)) }}" placeholder="—" @disabled($suspendido)>
+                                <div id="dorsal-error-{{ $jugador->id }}" class="invalid-feedback" data-number-error aria-live="polite"></div>
+                            </td>
                             <td>@if($suspendido)<span class="badge bg-danger"><i class="bi bi-lock-fill me-1"></i>Suspendido</span>@else<span class="badge bg-success">Disponible</span>@endif</td>
                         </tr>
                     @endforeach

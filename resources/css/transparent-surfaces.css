@@ -1,0 +1,31 @@
+/* Superficies exteriores comunes a las vistas publicas y administrativas. */
+body .contenedor-transparente,
+body .championship-detail.contenedor-transparente,
+body .contenedor-transparente:hover,
+body .public-detail .public-section,
+body :is(.public-detail, .championship-detail) :is(.group-table-card, .stage-bracket, .bracket-showcase) {
+    background: transparent;
+    border-color: transparent;
+    box-shadow: none;
+    backdrop-filter: none;
+    -webkit-backdrop-filter: none;
+}
+
+body .contenedor-transparente:hover {
+    transform: none;
+}
+
+:is(.public-detail, .championship-detail) :is(.section-title, .group-table-card h3, .stage-column > header),
+.contenedor-transparente > :is(h1, h2, h3),
+.championship-header {
+    text-shadow: 0 1px 3px rgba(0, 0, 0, .85);
+}
+
+.card.contenedor-transparente {
+    color: #fff;
+}
+
+.card.contenedor-transparente > .card-header {
+    background: transparent;
+    border-color: transparent;
+}

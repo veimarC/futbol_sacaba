@@ -24,7 +24,7 @@
                     </div>
                     <div class="col-md-5">
                         <label class="form-label">Rol en la plataforma</label>
-                        <div class="form-control profile-readonly"><i class="bi bi-shield-check me-2"></i>{{ ucfirst($usuario->rol) }}</div>
+                        <div class="form-control profile-readonly"><i class="bi bi-shield-check me-2"></i>{{ $usuario->esDesarrollador() ? 'Administrador general' : ucfirst($usuario->rol) }}</div>
                         <div class="form-text text-white-75">El rol protege los permisos de tu cuenta.</div>
                     </div>
                     <div class="col-12">

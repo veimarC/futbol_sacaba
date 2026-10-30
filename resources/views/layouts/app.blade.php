@@ -24,7 +24,11 @@
             </button>
             <div class="collapse navbar-collapse" id="menuPrincipal">
                 @guest
-                    @if(request()->routeIs('publico.*'))
+                    @if(request()->routeIs('publico.show') && isset($campeonato))
+                    <div class="navbar-championship-context ms-lg-4 me-lg-3">
+                        <a href="{{ route('publico.index') }}" aria-label="Volver a campeonatos"><i class="bi bi-arrow-left"></i></a>
+                    </div>
+                    @elseif(request()->routeIs('publico.index'))
                     <form class="navbar-public-search ms-lg-4 me-lg-3" method="GET" action="{{ route('publico.index') }}" role="search">
                         <label for="buscar-navbar" class="visually-hidden">Buscar campeonato por nombre</label>
                         <i class="bi bi-search"></i>
@@ -33,7 +37,14 @@
                     </form>
                     @endif
                 @endguest
-                <ul class="navbar-nav ms-auto align-items-center gap-2">
+                @auth
+                    @if(request()->routeIs('publico.show', 'campeonatos.show') && isset($campeonato))
+                    <div class="navbar-championship-context ms-lg-4 me-lg-3">
+                        <a href="{{ route(request()->routeIs('publico.show') ? 'publico.index' : 'campeonatos.index') }}" aria-label="Volver a campeonatos"><i class="bi bi-arrow-left"></i></a>
+                    </div>
+                    @endif
+                @endauth
+                <ul class="navbar-nav ms-auto align-items-center gap-2 {{ request()->routeIs('publico.show', 'campeonatos.show') ? 'd-none' : '' }}">
                     @guest
                     <li class="nav-item">
                         <a class="nav-link {{ Request::is('/') ? 'active' : '' }}" href="{{ route('publico.index') }}">
@@ -43,13 +54,11 @@
                     @endguest
                     @auth
                     <li class="nav-item">
-                        <a class="nav-link {{ Request::is('campeonatos*') || Request::is('arbitro/campeonatos*') ? 'active' : '' }}" href="{{ Auth::user()->rol === \App\Models\User::ROLE_DELEGADO ? route('campeonatos.index') : (Auth::user()->rol === \App\Models\User::ROLE_ARBITRO ? route('arbitros.explorar') : route('campeonatos.index')) }}">
+                        <a class="nav-link {{ Request::is('campeonatos*') ? 'active' : '' }}" href="{{ route('campeonatos.index') }}">
                             <i class="bi bi-trophy"></i> {{ Auth::user()->rol === \App\Models\User::ROLE_DELEGADO ? 'Mis campeonatos' : 'Campeonatos' }}
                         </a>
                     </li>
-                    @if(Auth::user()->rol === \App\Models\User::ROLE_ARBITRO)
-                    <li class="nav-item"><a class="nav-link {{ Request::is('arbitro/mis-arbitrajes') ? 'active' : '' }}" href="{{ route('arbitros.panel') }}"><i class="bi bi-calendar-check"></i> Mis arbitrajes</a></li>
-                    @endif
+
                     @if(Auth::user()->rol === \App\Models\User::ROLE_DELEGADO)
                     <li class="nav-item"><a class="nav-link {{ Request::is('campeonatos-descubrir') ? 'active' : '' }}" href="{{ route('campeonatos.descubrir') }}"><i class="bi bi-search"></i> Inscribirme</a></li>
                     <li class="nav-item"><a class="nav-link {{ Request::is('equipos*') ? 'active' : '' }}" href="{{ route('equipos.index') }}"><i class="bi bi-shield-fill"></i> Mis equipos</a></li>
@@ -81,12 +90,12 @@
                     @endauth
                     @guest
                         <li class="nav-item ms-lg-3">
-                            <a class="nav-link" href="{{ route('login') }}">
+                            <a class="{{ request()->routeIs('login') ? 'btn btn-naranja' : 'nav-link' }}" href="{{ route('login') }}" @if(request()->routeIs('login')) aria-current="page" @endif>
                                 <i class="bi bi-box-arrow-in-right"></i> Ingresar
                             </a>
                         </li>
                         <li class="nav-item ms-lg-2">
-                            <a class="btn btn-naranja" href="{{ route('register') }}">
+                            <a class="{{ request()->routeIs('register') ? 'btn btn-naranja' : 'nav-link' }}" href="{{ route('register') }}" @if(request()->routeIs('register')) aria-current="page" @endif>
                                 <i class="bi bi-person-plus"></i> Registrarse
                             </a>
                         </li>
@@ -112,7 +121,32 @@
                 </ul>
             </div>
         </div>
-    </nav>
+        @if(request()->routeIs('publico.show') && isset($campeonato))
+            <nav class="navbar-context-tabs detail-nav" aria-label="Secciones del campeonato" role="tablist">
+                <a href="#resumen" data-module="resumen"><i class="bi bi-journal-text"></i> Reglamentos</a>
+                <a href="#equipos" data-module="equipos"><i class="bi bi-shield-fill"></i> Equipos</a>
+                <a href="#partidos" data-module="partidos" class="active"><i class="bi bi-calendar-event"></i> Partidos</a>
+                @if($campeonato->tieneTablaPosiciones())
+                <a href="#tabla" data-module="tabla"><i class="bi bi-bar-chart-steps"></i> Tabla</a>
+                @endif
+                @if($mostrarLlaves)<a href="#llaves" data-module="llaves"><i class="bi bi-diagram-3-fill"></i> Llaves</a>@endif
+                <a href="#goleadores" data-module="goleadores"><i class="bi bi-award"></i> Goleadores</a>
+                <a href="#tarjetas" data-module="tarjetas"><i class="bi bi-card-list"></i> Tarjetas</a>
+            </nav>
+        @elseif(request()->routeIs('campeonatos.show') && isset($campeonato) && auth()->check())
+            @php($barraPartidos = request('seccion') === 'partidos' || auth()->user()->rol === \App\Models\User::ROLE_DELEGADO)
+            <div class="navbar-context-tabs championship-tabs" role="tablist" aria-label="Contenido del campeonato">
+                <button id="reglamentos-tab" class="championship-tab module-tab" type="button" role="tab" aria-controls="reglamentos" data-bs-toggle="tab" data-bs-target="#reglamentos"><i class="bi bi-journal-text"></i> Reglamentos</button>
+                <button class="championship-tab module-tab {{ $barraPartidos ? '' : 'active' }}" type="button" data-bs-toggle="tab" data-bs-target="#eq"><i class="bi bi-people-fill"></i> Equipos</button>
+                <button class="championship-tab module-tab {{ $barraPartidos ? 'active' : '' }}" type="button" data-bs-toggle="tab" data-bs-target="#par"><i class="bi bi-calendar-event"></i> Partidos</button>
+                @if($campeonato->tieneTablaPosiciones())
+                <button class="championship-tab module-tab" type="button" data-bs-toggle="tab" data-bs-target="#tab"><i class="bi bi-bar-chart-steps"></i> Tabla</button>
+                @endif
+                @if($mostrarLlaves)<button class="championship-tab module-tab" type="button" data-bs-toggle="tab" data-bs-target="#llaves"><i class="bi bi-diagram-3-fill"></i> Llaves</button>@endif
+                <button class="championship-tab module-tab" type="button" data-bs-toggle="tab" data-bs-target="#goleadores"><i class="bi bi-award-fill"></i> Goleadores</button>
+                <button class="championship-tab module-tab" type="button" data-bs-toggle="tab" data-bs-target="#tarjetas"><i class="bi bi-card-list"></i> Tarjetas</button>
+            </div>
+        @endif    </nav>
 
     <!-- Contenido -->
     <main>

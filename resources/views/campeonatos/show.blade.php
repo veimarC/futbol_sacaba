@@ -11,7 +11,7 @@
         && $estadoMiInscripcion === 'aprobado';
     $mostrarPartidosInicialmente = $esDelegadoAprobado || request('seccion') === 'partidos';
 @endphp
-<div class="contenedor-transparente animar-aparecer">
+<div class="contenedor-transparente animar-aparecer championship-detail">
 
     {{-- ✅ MENSAJES DE ÉXITO Y ERROR --}}
     @if(session('mensaje'))
@@ -31,7 +31,7 @@
     @endif
 
     <div class="championship-header mb-4 d-flex align-items-center gap-3">
-        <a href="{{ auth()->user()->rol === \App\Models\User::ROLE_DELEGADO ? route('equipos.index') : (auth()->user()->rol === \App\Models\User::ROLE_ARBITRO ? route('arbitros.explorar') : route('campeonatos.index')) }}" class="btn btn-borde btn-sm">← Volver</a>
+        <a href="{{ auth()->user()->rol === \App\Models\User::ROLE_DELEGADO ? route('equipos.index') : route('campeonatos.index') }}" class="btn btn-borde btn-sm">← Volver</a>
         <div>
             <h2 class="fw-bold mb-1">
                 <i class="bi bi-trophy me-2 text-accent"></i>{{ $campeonato->nombre }}
@@ -53,25 +53,40 @@
             @endif
         </div>
         <div class="ms-auto d-flex gap-2 flex-wrap">
-            @if(auth()->check() && (auth()->user()->esDesarrollador() || (auth()->user()->rol === \App\Models\User::ROLE_ORGANIZADOR && (int) $campeonato->usuario_creador === (int) auth()->id())))
-                <a href="{{ route('campeonatos.arbitros.administrar', $campeonato) }}" class="btn btn-sm btn-borde">
-                    <i class="bi bi-person-badge me-1"></i> Árbitros
-                </a>
-            @endif
+
             @can('update', $campeonato)
-            <a href="{{ route('campeonatos.edit', $campeonato) }}" class="btn btn-sm btn-warning text-dark">
-                <i class="bi bi-pencil-square"></i> Editar
-            </a>
-            <form action="{{ route('campeonatos.destroy', $campeonato) }}" method="POST" onsubmit="return confirm('¿Seguro que quieres eliminar este torneo?')">
-                @csrf @method('DELETE')
-                <button class="btn btn-sm btn-danger">
-                    <i class="bi bi-trash3"></i> Eliminar
+            @php
+                $puedeEditarCampeonato = $campeonato->aprobacion_estado !== 'pendiente';
+                $puedeEliminarCampeonato = auth()->user()->can('delete', $campeonato)
+                    && (auth()->user()->esDesarrollador() || (!$campeonato->equipos()->exists()
+                    && !$campeonato->partidos()->exists()));
+            @endphp
+            @if($puedeEditarCampeonato || $puedeEliminarCampeonato)
+            <div class="dropdown championship-options">
+                <button class="btn btn-sm btn-borde" type="button" id="championship-options" data-bs-toggle="dropdown" aria-expanded="false">
+                    <i class="bi bi-three-dots-vertical" aria-hidden="true"></i> Opciones
                 </button>
-            </form>
+                <ul class="dropdown-menu dropdown-menu-end" aria-labelledby="championship-options">
+                    @if($puedeEditarCampeonato)
+                        <li><a href="{{ route('campeonatos.edit', $campeonato) }}" class="dropdown-item"><i class="bi bi-pencil-square me-2" aria-hidden="true"></i>Editar campeonato</a></li>
+                    @endif
+                    @if($puedeEliminarCampeonato)
+                    <li>
+                        <form action="{{ route('campeonatos.destroy', $campeonato) }}" method="POST" onsubmit="return confirm('¿Eliminar este campeonato con sus inscripciones, partidos, resultados y nóminas? Los equipos y jugadores se conservarán. Esta acción no se puede deshacer.')">
+                            @csrf @method('DELETE')
+                            <button type="submit" class="dropdown-item text-danger">
+                                <i class="bi bi-trash3 me-2" aria-hidden="true"></i> Eliminar campeonato
+                            </button>
+                        </form>
+                    </li>
+                    @endif
+                </ul>
+            </div>
+            @endif
             @endcan
             @if(auth()->check() && (auth()->user()->rol === \App\Models\User::ROLE_DESARROLLADOR || (auth()->user()->rol === \App\Models\User::ROLE_ORGANIZADOR && $campeonato->usuario_creador == auth()->id())))
                 {{-- Botón rápido para generar fixture si el formato es liga --}}
-                @if(in_array($campeonato->formato, ['liga','liga_ida_vuelta','eliminacion','grupos_eliminacion']) && $fases->isEmpty() && $partidos->isEmpty())
+                @if($campeonato->aprobacion_estado === 'aprobado' && in_array($campeonato->formato, ['liga','liga_ida_vuelta','eliminacion','grupos_eliminacion']) && $fases->isEmpty() && $partidos->isEmpty())
                     <form action="{{ route('campeonatos.generarFixture', $campeonato) }}" method="POST" onsubmit="return confirm('La configuración se calculará con los equipos aprobados y se cerrarán las inscripciones. ¿Deseas generar el fixture?')" class="ms-2">
                         @csrf
                         <button class="btn btn-sm btn-success"><i class="bi bi-magic me-1"></i>Configurar y generar fixture</button>
@@ -81,6 +96,9 @@
         </div>
     </div>
 
+    @include('campeonatos.aprobacion')
+
+    @if($campeonato->aprobacion_estado === 'aprobado')
     @if(auth()->user()->rol === \App\Models\User::ROLE_DELEGADO)
         @php
             $inscripcionDisponible = $campeonato->estado_actual !== 'finalizado'
@@ -170,63 +188,41 @@
         </section>
     @endif
 
-    @if(auth()->user()->rol === \App\Models\User::ROLE_ARBITRO)
-        <section class="referee-enrollment mb-4">
-            <div class="d-flex flex-column flex-lg-row justify-content-between gap-3">
-                <div>
-                    <span class="small text-uppercase fw-bold text-warning">Inscripción de árbitros</span>
-                    <h3 class="h5 fw-bold mt-1 mb-1">¿Quieres arbitrar este campeonato?</h3>
-                    <p class="opacity-75 mb-0">Envía una sola postulación. El organizador debe aprobarte antes de poder asignarte partidos.</p>
-                </div>
-                <a href="{{ route('arbitros.panel') }}" class="btn btn-borde align-self-lg-start">Mis arbitrajes</a>
-            </div>
-            @if($campeonato->estado_actual === 'finalizado')
-                <div class="alert alert-secondary mt-3 mb-0">Este campeonato ya finalizó.</div>
-            @elseif(!$miSolicitudArbitro)
-                <form method="POST" action="{{ route('arbitros.solicitar', $campeonato) }}" class="mt-3">
-                    @csrf
-                    <label for="mensaje-arbitro" class="form-label">Mensaje para el organizador (opcional)</label>
-                    <textarea id="mensaje-arbitro" name="mensaje" class="form-control @error('mensaje') is-invalid @enderror" rows="2" maxlength="500" placeholder="Ej.: Tengo disponibilidad los fines de semana.">{{ old('mensaje') }}</textarea>
-                    @error('mensaje')<div class="invalid-feedback">{{ $message }}</div>@enderror
-                    <button class="btn btn-naranja mt-3"><i class="bi bi-send me-1"></i> Enviar postulación</button>
-                </form>
-            @else
-                @php
-                    $estadoArbitro = $miSolicitudArbitro->estado;
-                @endphp
-                <div class="application-result mt-3">
-                    <div><strong>Estado de tu postulación:</strong> <span class="badge {{ $estadoArbitro === 'aprobado' ? 'bg-success' : ($estadoArbitro === 'pendiente' ? 'bg-warning text-dark' : 'bg-danger') }}">{{ ucfirst($estadoArbitro) }}</span></div>
-                    @if($estadoArbitro === 'pendiente')<p class="small opacity-75 mb-0 mt-2">El organizador todavía está revisando tu solicitud.</p>@endif
-                    @if($miSolicitudArbitro->motivo_respuesta)<p class="small mb-0 mt-2"><strong>Respuesta:</strong> {{ $miSolicitudArbitro->motivo_respuesta }}</p>@endif
-                </div>
-            @endif
-        </section>
-    @endif
-
-    <div class="championship-tabs d-flex flex-wrap gap-3 mb-4 mt-4" role="tablist" aria-label="Contenido del campeonato">
-        <button class="btn championship-tab module-tab {{ $mostrarPartidosInicialmente ? '' : 'active' }} px-4 py-2 fw-semibold shadow-sm" type="button" data-bs-toggle="tab" data-bs-target="#eq">
-            <i class="bi bi-people-fill me-2"></i>Equipos
-        </button>
-        <button class="btn championship-tab module-tab {{ $mostrarPartidosInicialmente ? 'active' : '' }} px-4 py-2 fw-semibold shadow-sm" type="button" data-bs-toggle="tab" data-bs-target="#par">
-            <i class="bi bi-calendar-event me-2"></i>Partidos
-        </button>
-        <button class="btn championship-tab module-tab px-4 py-2 fw-semibold shadow-sm" type="button" data-bs-toggle="tab" data-bs-target="#tab">
-            <i class="bi bi-bar-chart-steps me-2"></i>Tabla
-        </button>
-        @if($mostrarLlaves)
-            <button class="btn championship-tab module-tab px-4 py-2 fw-semibold shadow-sm" type="button" data-bs-toggle="tab" data-bs-target="#llaves">
-                <i class="bi bi-diagram-3-fill me-2"></i>Llaves
-            </button>
-        @endif
-        <button class="btn championship-tab module-tab px-4 py-2 fw-semibold shadow-sm" type="button" data-bs-toggle="tab" data-bs-target="#goleadores">
-            <i class="bi bi-award-fill me-2"></i>Goleadores
-        </button>
-        <button class="btn championship-tab module-tab px-4 py-2 fw-semibold shadow-sm" type="button" data-bs-toggle="tab" data-bs-target="#tarjetas">
-            <i class="bi bi-card-list me-2"></i>Tarjetas
-        </button>
-    </div>
-
     <div class="tab-content">
+        <section class="tab-pane fade" id="reglamentos" role="tabpanel" aria-labelledby="reglamentos-tab">
+            <div class="championship-rules-heading">
+                <div>
+                    <span class="championship-rules-kicker">Normas de participación</span>
+                    <h3>Reglamento del campeonato</h3>
+                    <p>Consulta las condiciones de participación y las reglas del torneo.</p>
+                </div>
+@can('downloadRules', $campeonato)
+                <a class="btn btn-naranja" href="{{ route('campeonatos.reglamento.pdf', $campeonato) }}"><i class="bi bi-file-earmark-pdf me-1"></i>Descargar reglamento PDF</a>
+@endcan
+            </div>
+            <dl class="championship-rules-grid">
+                @foreach([
+                    ['dribbble', 'Modalidad', 'Fútbol '.($campeonato->modalidad ?: 'libre')],
+                    ['award', 'Categoría', $campeonato->categoria_edad ? $campeonato->categoria_edad_label : 'Libre'],
+                    ['people', 'Participación', $campeonato->sexo ? $campeonato->sexo_label : 'Mixto'],
+                    ['person-bounding-box', 'En cancha', $campeonato->jugadores_cancha.' jugadores'],
+                    ['person-check', 'Mínimo para jugar', $campeonato->minimo_para_jugar.' jugadores'],
+                    ['shield-check', 'Plantilla por equipo', $campeonato->min_jugadores_equipo.' a '.$campeonato->max_jugadores_equipo.' jugadores'],
+                ] as [$icono, $etiqueta, $valor])
+                    <div class="championship-rule-card">
+                        <i class="bi bi-{{ $icono }}" aria-hidden="true"></i>
+                        <div><dt>{{ $etiqueta }}</dt><dd>{{ $valor }}</dd></div>
+                    </div>
+                @endforeach
+            </dl>
+            <article class="championship-rules-document" aria-labelledby="internal-rules-title">
+                <header>
+                    <span class="championship-rules-document-icon"><i class="bi bi-journal-text" aria-hidden="true"></i></span>
+                    <div><h4 id="internal-rules-title">Reglamentos internos</h4><p>Disposiciones establecidas por la organización</p></div>
+                </header>
+                <div class="internal-rules-text">{{ $campeonato->reglamento_interno ?: 'El organizador todavía no publicó reglamentos internos.' }}</div>
+            </article>
+        </section>
         {{-- Pestaña Equipos --}}
         <div class="tab-pane fade {{ $mostrarPartidosInicialmente ? '' : 'show active' }}" id="eq">
             <div class="teams-heading d-flex justify-content-between align-items-center mb-3">
@@ -351,9 +347,9 @@
         </div>
 
         {{-- Pestaña Partidos --}}
-        <div class="tab-pane fade {{ $mostrarPartidosInicialmente ? 'show active' : '' }}" id="par">
+        <div class="tab-pane fade match-agenda {{ $mostrarPartidosInicialmente ? 'show active' : '' }}" id="par">
             <div class="d-flex justify-content-between align-items-center mb-3">
-                <h5 class="fw-semibold">Partidos programados</h5>
+                <div><h5 class="fw-semibold mb-1">Agenda de partidos</h5><p class="agenda-intro mb-0">Consulta los encuentros por fecha y gestiona cada partido.</p></div>
                 @if($campeonato->estado_actual !== 'finalizado'
                     && ! ($campeonato->formato === 'grupos_eliminacion' && $fases->where('tipo', 'grupo')->isNotEmpty())
                     && (auth()->user()->esDesarrollador() || (auth()->user()->rol === \App\Models\User::ROLE_ORGANIZADOR && (int) $campeonato->usuario_creador === (int) auth()->id())))
@@ -369,81 +365,75 @@
                     <p class="mt-3">Aún no hay partidos programados en este campeonato.</p>
                 </div>
             @else
-                <div class="row g-3">
-                    @php
-                        $ultimaEtiquetaFase = null;
-                    @endphp
-                    @foreach($partidos as $p)
-                        @php
-                            $etiquetaFase = $etiquetasFases->get($p->fase_id, 'Otros partidos');
-                        @endphp
-                        @if($campeonato->formato === 'grupos_eliminacion' && $etiquetaFase !== $ultimaEtiquetaFase)
-                            <div class="col-12 {{ $ultimaEtiquetaFase !== null ? 'mt-5' : '' }}">
-                                <h5 class="fw-bold mb-0 text-warning">{{ $etiquetaFase }}</h5>
-                                <p class="small opacity-75 mb-0">
-                                    {{ str_starts_with($etiquetaFase, 'Grupo') ? 'Partidos entre los equipos de este grupo.' : 'Partidos de eliminación directa.' }}
-                                </p>
+                @php
+                    $agendaPorFecha = $partidos
+                        ->sortBy(fn ($partido) => ($partido->fecha?->format('Y-m-d') ?? '9999-12-31').' '.($partido->hora ?? '99:99'))
+                        ->groupBy(fn ($partido) => $partido->fecha?->format('Y-m-d') ?? 'sin-fecha');
+                @endphp
+                <div class="agenda-days">
+                    @foreach($agendaPorFecha as $fechaAgenda => $partidosDelDia)
+                        <section class="agenda-day" aria-labelledby="agenda-date-{{ $fechaAgenda }}">
+                            <div class="agenda-date-heading">
+                                <h3 id="agenda-date-{{ $fechaAgenda }}">
+                                    <i class="bi bi-calendar-event" aria-hidden="true"></i>
+                                    {{ $fechaAgenda === 'sin-fecha' ? 'Por programar' : ucfirst($partidosDelDia->first()->fecha->locale('es')->isoFormat('dddd D [de] MMMM [de] YYYY')) }}
+                                </h3>
+                                <span>{{ $partidosDelDia->count() }} {{ $partidosDelDia->count() === 1 ? 'partido' : 'partidos' }}</span>
+@can('downloadFixture', $campeonato)
+                                <a class="btn btn-naranja btn-sm" href="{{ route('campeonatos.jornada.pdf', ['campeonato' => $campeonato, 'fecha' => $fechaAgenda]) }}"><i class="bi bi-file-earmark-pdf me-1"></i>Descargar jornada PDF</a>
+@endcan
                             </div>
-                            @php
-                                $ultimaEtiquetaFase = $etiquetaFase;
-                            @endphp
-                        @endif
-                        <div class="col-md-6">
-                            <div class="tarjeta-opcion p-3">
-                                <div class="d-flex justify-content-between align-items-center mb-2">
-                                    <span class="badge bg-secondary">
-                                        @if($p->fecha && $p->hora)
-                                            {{ $p->fecha->format('d/m/Y') }} - {{ \Carbon\Carbon::parse($p->hora)->format('H:i') }}
-                                        @else
-                                            Fecha por definir
-                                        @endif
-                                    </span>
-                                    <span class="badge {{ $p->estado == 'programado' ? 'bg-primary' : 'bg-success' }}">
-                                        {{ ucfirst($p->estado) }}
-                                    </span>
-                                </div>
-
-                                <div class="d-flex justify-content-between align-items-center text-center">
-                                    <div>
-                                        <div class="match-shield">
-                                            @if($escudoLocalUrl = $p->equipoLocal->escudo_url)
-                                                <img src="{{ $escudoLocalUrl }}" alt="Escudo {{ $p->equipoLocal->nombre }}">
-                                            @else
-                                                <i class="bi bi-shield icon-shield-muted"></i>
+                            <div class="agenda-match-list">
+                                @foreach($partidosDelDia as $p)
+                                    <article class="agenda-match">
+                                        <div class="agenda-time">
+                                            <strong>{{ $p->hora ? \Carbon\Carbon::parse($p->hora)->format('H:i') : '--:--' }}</strong>
+                                            <small>{{ $p->hora ? 'Hora del partido' : 'Hora por definir' }}</small>
+                                        </div>
+                                        <div class="agenda-fixture">
+                                            <div class="agenda-team">
+                                                <x-team-crest :equipo="$p->equipoLocal" />
+                                                <strong><span class="visually-hidden">Local: </span>{{ $p->equipoLocal?->nombre ?? 'Por definir' }}</strong>
+                                            </div>
+                                            <span class="agenda-score" aria-label="{{ $p->estado === 'jugado' ? 'Resultado' : 'contra' }}">
+                                                {{ $p->estado === 'jugado' ? $p->goles_local.' - '.$p->goles_visita : 'vs' }}
+                                                @if($p->penales_local !== null)<small class="d-block">Penales {{ $p->penales_local }}?{{ $p->penales_visita }}</small>@endif
+                                            </span>
+                                            <div class="agenda-team">
+                                                <x-team-crest :equipo="$p->equipoVisita" />
+                                                <strong><span class="visually-hidden">Visita: </span>{{ $p->equipoVisita?->nombre ?? 'Por definir' }}</strong>
+                                            </div>
+                                        </div>
+                                        <div class="agenda-status">
+                                            <span class="agenda-badge {{ $p->estado === 'jugado' ? 'is-played' : '' }}">{{ $p->wo_motivo ? 'W.O.' : ucfirst($p->estado) }}</span>
+                                            @if($p->estado === 'programado' && (auth()->user()->esDesarrollador() || (auth()->user()->rol === \App\Models\User::ROLE_ORGANIZADOR && (int) $campeonato->usuario_creador === (int) auth()->id())))
+                                                <div class="dropdown">
+                                                    <button class="btn agenda-more" type="button" data-bs-toggle="dropdown" aria-expanded="false" aria-label="Acciones del partido {{ $p->equipoLocal?->nombre }} contra {{ $p->equipoVisita?->nombre }}">
+                                                        <i class="bi bi-three-dots" aria-hidden="true"></i>
+                                                    </button>
+                                                    <ul class="dropdown-menu dropdown-menu-end">
+                                                        <li><a href="{{ route('partidos.edit', $p) }}" class="dropdown-item"><i class="bi bi-pencil me-2"></i>Editar</a></li>
+                                                        <li>
+                                                            <form action="{{ route('partidos.destroy', $p) }}" method="POST" onsubmit="return confirm('¿Eliminar este partido?')">
+                                                                @csrf @method('DELETE')
+                                                                <button type="submit" class="dropdown-item text-danger"><i class="bi bi-trash3 me-2"></i>Eliminar</button>
+                                                            </form>
+                                                        </li>
+                                                    </ul>
+                                                </div>
                                             @endif
                                         </div>
-                                        <h6 class="fw-bold mb-0">{{ $p->equipoLocal->nombre }}</h6>
-                                        <small class="opacity-75">Local</small>
-                                    </div>
-
-                                    <div class="fw-bold fs-5">VS</div>
-
-                                    <div>
-                                        <div class="match-shield">
-                                            @if($escudoVisitaUrl = $p->equipoVisita->escudo_url)
-                                                <img src="{{ $escudoVisitaUrl }}" alt="Escudo {{ $p->equipoVisita->nombre }}">
-                                            @else
-                                                <i class="bi bi-shield icon-shield-muted"></i>
+                                        <div class="agenda-meta">
+                                            <span><i class="bi bi-geo-alt me-1" aria-hidden="true"></i>{{ $p->cancha ?: 'Cancha por definir' }}</span>
+                                            @if($p->fase_id)
+                                                <span>{{ $etiquetasFases->get($p->fase_id, 'Otros partidos') }}</span>
                                             @endif
                                         </div>
-                                        <h6 class="fw-bold mb-0">{{ $p->equipoVisita->nombre }}</h6>
-                                        <small class="opacity-75">Visita</small>
-                                    </div>
-                                </div>
-
-                                @if($p->cancha)
-                                    <p class="small opacity-80 mt-2 mb-0 text-center">
-                                        <i class="bi bi-geo-alt me-1"></i>{{ $p->cancha }}
-                                    </p>
-                                @endif
-
-                                {{-- Acciones rápidas del partido. El resultado se registra desde Mesa de control. --}}
-                                <div class="d-flex justify-content-center gap-2 mt-3 flex-wrap">
+                                        <div class="agenda-actions">
                                     @php
                                         $usuarioActual = auth()->user();
                                         $puedeVerNominas = $usuarioActual->esDesarrollador()
                                             || ($usuarioActual->rol === \App\Models\User::ROLE_ORGANIZADOR && (int) $campeonato->usuario_creador === (int) $usuarioActual->id)
-                                            || ($usuarioActual->rol === \App\Models\User::ROLE_ARBITRO && (int) $p->arbitro_id === (int) $usuarioActual->id)
                                             || ($usuarioActual->rol === \App\Models\User::ROLE_DELEGADO && in_array((int) $usuarioActual->id, [(int) $p->equipoLocal?->delegado_id, (int) $p->equipoVisita?->delegado_id], true));
                                         $equipoDelDelegado = null;
                                         if ($usuarioActual->rol === \App\Models\User::ROLE_DELEGADO) {
@@ -459,7 +449,7 @@
                                             && $nominaPropia?->estado !== 'aprobada';
                                     @endphp
                                     @if($puedeVerNominas)
-                                        <a href="{{ $puedePrepararNomina ? route('partidos.nominas.editar', [$p, $equipoDelDelegado]) : route('partidos.nominas.index', $p) }}" class="btn btn-sm btn-borde">
+                                        <a href="{{ $puedePrepararNomina ? route('partidos.nominas.editar', [$p, $equipoDelDelegado]) : route('partidos.nominas.index', $p) }}" class="btn btn-sm agenda-primary">
                                             <i class="bi bi-clipboard2-check"></i>
                                             @if($usuarioActual->rol === \App\Models\User::ROLE_ORGANIZADOR)
                                                 Mesa de control
@@ -470,36 +460,19 @@
                                             @endif
                                         </a>
                                     @endif
-                                    @if($p->estado == 'programado')
-                                        @php
-                                            $administraPartidos = auth()->user()->esDesarrollador() || (auth()->user()->rol === \App\Models\User::ROLE_ORGANIZADOR && (int) $campeonato->usuario_creador === (int) auth()->id());
-                                        @endphp
-                                        @if($administraPartidos)
-                                        <a href="{{ route('partidos.edit', $p) }}" class="btn btn-sm btn-warning text-dark">
-                                            <i class="bi bi-pencil"></i> Editar
-                                        </a>
-                                        <form action="{{ route('partidos.destroy', $p) }}" method="POST" onsubmit="return confirm('¿Eliminar este partido?')">
-                                            @csrf @method('DELETE')
-                                            <button class="btn btn-sm btn-danger">
-                                                <i class="bi bi-trash3"></i> Eliminar
-                                            </button>
-                                        </form>
-                                        @endif
-                                    @else
-                                        <div class="text-center fw-bold fs-5">
-                                            {{ $p->goles_local }} - {{ $p->goles_visita }}
-                                            <div class="badge bg-success mt-1">Jugado</div>
+
                                         </div>
-                                    @endif
-                                </div>
+                                    </article>
+                                @endforeach
                             </div>
-                        </div>
+                        </section>
                     @endforeach
                 </div>
             @endif
         </div>
 
         {{-- Pestaña Tablas --}}
+        @if($campeonato->tieneTablaPosiciones())
         <div class="tab-pane fade" id="tab">
             @if($campeonato->formato === 'grupos_eliminacion' && $tablasGrupos->isNotEmpty())
                 @php
@@ -534,19 +507,7 @@
                                     </select>
                                     <button type="submit" class="btn btn-naranja">Guardar</button>
                                 </div>
-                                <div class="qualification-options">
-                                    <div class="form-check form-switch">
-                                        <input type="hidden" name="ida_vuelta_eliminatorias" value="0">
-                                        <input class="form-check-input" type="checkbox" role="switch" id="ida_vuelta_eliminatorias" name="ida_vuelta_eliminatorias" value="1" @checked(data_get($campeonato->formato_config, 'eliminations_home_away', false))>
-                                        <label class="form-check-label" for="ida_vuelta_eliminatorias">Ida y vuelta en eliminatorias</label>
-                                    </div>
-                                    <div class="form-check form-switch">
-                                        <input type="hidden" name="partido_tercer_lugar" value="0">
-                                        <input class="form-check-input" type="checkbox" role="switch" id="partido_tercer_lugar" name="partido_tercer_lugar" value="1" @checked(data_get($campeonato->formato_config, 'third_place_match', false))>
-                                        <label class="form-check-label" for="partido_tercer_lugar">Partido por el tercer lugar</label>
-                                    </div>
-                                </div>
-                                <small id="qualification-help">La final siempre se juega a un solo partido.</small>
+                                <small id="qualification-help">Las vueltas y el tercer puesto se definieron antes de aprobar el campeonato. La final siempre es a partido único.</small>
                             </form>
                         @else
                             <div class="qualification-summary">
@@ -585,37 +546,13 @@
             @endif
         </div>
 
+        @endif
+
         @if($mostrarLlaves)
             <div class="tab-pane fade" id="llaves">
-                <div class="module-heading mb-3">
-                    <h5 class="fw-semibold mb-1">Llaves eliminatorias</h5>
-                    <p class="small opacity-75 mb-0">Los ganadores avanzan a la siguiente ronda.</p>
+                <div class="public-detail">
+                    @include('publico.partials.bracket')
                 </div>
-                @if($partidosEliminacion->isEmpty())
-                    <div class="sports-empty">
-                        <i class="bi bi-diagram-3"></i>
-                        <strong>Las llaves todavía no fueron generadas.</strong>
-                        <span>Primero deben finalizar todos los partidos de la fase de grupos.</span>
-                    </div>
-                @else
-                    @foreach($partidosEliminacion as $numeroRonda => $partidosRonda)
-                        <section class="mb-4">
-                            <h6 class="page-kicker mb-3">Ronda {{ $numeroRonda }}</h6>
-                            <div class="knockout-match-grid">
-                                @foreach($partidosRonda as $partido)
-                                    <article class="knockout-match-card">
-                                        <div><x-team-crest :equipo="$partido->equipoLocal" /><strong>{{ $partido->equipoLocal?->nombre ?? 'Por definir' }}</strong></div>
-                                        <span class="knockout-score">
-                                            {{ $partido->estado === 'jugado' ? $partido->goles_local.' - '.$partido->goles_visita : 'VS' }}
-                                        </span>
-                                        <div><x-team-crest :equipo="$partido->equipoVisita" /><strong>{{ $partido->equipoVisita?->nombre ?? 'Por definir' }}</strong></div>
-                                        <small><i class="bi bi-calendar-event me-1"></i>{{ $partido->fecha?->format('d/m/Y') ?? 'Fecha por definir' }}</small>
-                                    </article>
-                                @endforeach
-                            </div>
-                        </section>
-                    @endforeach
-                @endif
             </div>
         @endif
 
@@ -664,6 +601,7 @@
         </div>
 
     </div>
+    @endif
 </div>
 
 <script>
@@ -697,21 +635,7 @@ document.addEventListener('DOMContentLoaded', function(){
     });
 
     // ✅ 2. PESTAÑAS
-    const botones = document.querySelectorAll('[data-bs-toggle="tab"]');
-    botones.forEach(btn => {
-        btn.addEventListener('click', function(){
-            botones.forEach(b => {
-                b.style.background = 'rgba(255,255,255,0.12)';
-                b.style.border = '1px solid rgba(255,255,255,0.2)';
-            });
-            this.style.background = 'var(--naranja-vivo)';
-            this.style.border = 'none';
-
-            const destino = this.getAttribute('data-bs-target');
-            document.querySelectorAll('.tab-pane').forEach(p => p.classList.remove('show','active'));
-            document.querySelector(destino).classList.add('show','active');
-        });
-    });
+    // Bootstrap y module-context conservan la pestaña activa.
 
 });
 </script>

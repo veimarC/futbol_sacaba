@@ -5,7 +5,7 @@
 @extends('layouts.app')
 
 @section('content')
-<div class="contenedor-transparente animar-aparecer">
+<div class="contenedor-transparente animar-aparecer championship-list">
     <div class="d-flex justify-content-between align-items-center gap-3 mb-4">
         <div>
             <h2 class="fw-bold mb-1"><i class="bi bi-trophy me-2 text-accent"></i>{{ auth()->user()->rol === \App\Models\User::ROLE_DELEGADO ? 'Mis campeonatos' : 'Campeonatos' }}</h2>
@@ -38,6 +38,7 @@
             @foreach($campeonatos as $campeonato)
                 <a href="{{ route('campeonatos.show', ['campeonato' => $campeonato, 'seccion' => auth()->user()->rol === \App\Models\User::ROLE_DELEGADO ? 'partidos' : null]) }}" class="col-md-6 tarjeta-opcion d-block text-decoration-none link-inherit">
                     <h4 class="fw-bold mb-2">{{ $campeonato->nombre }}</h4>
+                    <span class="badge bg-secondary mb-2">{{ $campeonato->aprobacion_label }}</span>
                     @if($campeonato->organizador)
                         <div class="small mb-2"><i class="bi bi-person-badge me-1 text-warning"></i>Organiza: <strong>{{ $campeonato->organizador->name }}</strong></div>
                     @endif

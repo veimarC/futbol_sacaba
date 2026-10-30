@@ -26,3 +26,12 @@ Thumbs.db
 /.tmp/
 __pycache__/
 *.pyc
+
+# Archivos locales y exportaciones; no publicar credenciales ni datos.
+.env.*
+!.env.example
+/output/
+/storage/PsySH/
+*.sql
+*.sql.gz
+*.zip

@@ -1,6 +1,6 @@
 <?php
 
-use App\Http\Controllers\CampeonatoArbitroController;
+
 use App\Http\Controllers\CampeonatoController;
 use App\Http\Controllers\CampeonatoEliminatoriaController;
 use App\Http\Controllers\EquipoController;
@@ -33,6 +33,7 @@ use Illuminate\Support\Facades\Route;
 // Rutas públicas: cualquier visitante puede consultar estos contenidos.
 Route::get('/', [PortalPublicoController::class, 'index'])->name('publico.index');
 Route::get('/torneos/{campeonato}', [PortalPublicoController::class, 'show'])->name('publico.show');
+Route::get('/torneos/{campeonato}/reglamento.pdf', \App\Http\Controllers\ReglamentoPdfController::class)->name('campeonatos.reglamento.pdf');
 
 // Agrega las rutas de ingreso, registro y recuperación de contraseña.
 Auth::routes();
@@ -51,28 +52,19 @@ Route::middleware('auth')->group(function () {
         ->middleware('role:delegado')
         ->name('campeonatos.descubrir');
 
-    /*
-     * Flujo del árbitro.
-     * `prefix` agrega /arbitro a las URL y `name` agrega arbitros. a los nombres.
-     * Por ejemplo, `panel` termina llamándose `arbitros.panel`.
-     */
-    Route::middleware('role:arbitro')->prefix('arbitro')->name('arbitros.')->group(function () {
-        Route::get('campeonatos', [CampeonatoArbitroController::class, 'explorar'])->name('explorar');
-        Route::get('mis-arbitrajes', [CampeonatoArbitroController::class, 'panel'])->name('panel');
-        Route::post('campeonatos/{campeonato}/postular', [CampeonatoArbitroController::class, 'solicitar'])->name('solicitar');
-    });
-
-    // El organizador responde una postulación; el árbitro no puede aprobarse solo.
-    Route::post('campeonatos/{campeonato}/arbitros/{arbitro}/gestionar', [CampeonatoArbitroController::class, 'gestionar'])
-        ->middleware('role:organizador|desarrollador')->name('campeonatos.arbitros.gestionar');
-    Route::get('campeonatos/{campeonato}/arbitros', [CampeonatoArbitroController::class, 'administrar'])
-        ->middleware('role:organizador|desarrollador')->name('campeonatos.arbitros.administrar');
-    // Respuesta JSON que llena dinámicamente el selector de árbitros de un partido.
-    Route::get('api/arbitros-campeonato/{campeonato}', [CampeonatoArbitroController::class, 'opciones'])
-        ->middleware('role:organizador|desarrollador')->name('campeonatos.arbitros.opciones');
+    Route::post('campeonatos/{campeonato}/enviar-revision', [\App\Http\Controllers\AprobacionCampeonatoController::class, 'enviar'])->name('campeonatos.enviarRevision');
+    Route::post('campeonatos/{campeonato}/revisar', [\App\Http\Controllers\AprobacionCampeonatoController::class, 'revisar'])->name('campeonatos.revisar');
 
     // Campeonatos: CRUD completo para crear, editar, ver y eliminar campeonatos
-    Route::resource('campeonatos', CampeonatoController::class);
+    Route::resource('campeonatos', CampeonatoController::class)
+        ->missing(function (\Illuminate\Http\Request $request) {
+            if ($request->routeIs('campeonatos.show') && ! $request->expectsJson()) {
+                return redirect()->route('campeonatos.index')
+                    ->with('mensaje', 'El campeonato solicitado ya no existe. Selecciona uno del listado.');
+            }
+
+            abort(404);
+        });
 
     // Generar fixture automático según el formato del campeonato
     Route::post('campeonatos/{campeonato}/generar-fixture', [CampeonatoController::class, 'generarFixture'])
@@ -98,6 +90,8 @@ Route::middleware('auth')->group(function () {
     // Partidos: crear, editar, actualizar y eliminar partidos. El índice general no se usa aquí.
     Route::resource('partidos', PartidoController::class)->except(['index', 'show']);
     Route::get('partidos/{partido}/nominas', [NominaPartidoController::class, 'index'])->name('partidos.nominas.index');
+    Route::get('partidos/{partido}/planilla.pdf', [NominaPartidoController::class, 'pdf'])->name('partidos.planilla.pdf');
+    Route::get('campeonatos/{campeonato}/jornada.pdf', \App\Http\Controllers\FixturePdfController::class)->name('campeonatos.jornada.pdf');
     Route::get('partidos/{partido}/nominas/{equipo}/editar', [NominaPartidoController::class, 'editar'])->name('partidos.nominas.editar');
     Route::put('partidos/{partido}/nominas/{equipo}', [NominaPartidoController::class, 'guardar'])->name('partidos.nominas.guardar');
     Route::post('partidos/{partido}/nominas/{nomina}/gestionar', [NominaPartidoController::class, 'gestionar'])->name('partidos.nominas.gestionar');
@@ -143,6 +137,8 @@ Route::middleware('auth')->group(function () {
         ->name('partidos.resultado');
     Route::put('/partidos/{partido}/guardar-resultado', [PartidoController::class, 'guardarResultado'])
         ->name('partidos.guardarResultado');
+
+    Route::post('partidos/{partido}/wo', [\App\Http\Controllers\PartidoWalkoverController::class, 'store'])->name('partidos.wo');
 
     // Guardar incidencias como goles y tarjetas asociadas a un partido
     Route::post('incidencias', [IncidenciaController::class, 'store'])

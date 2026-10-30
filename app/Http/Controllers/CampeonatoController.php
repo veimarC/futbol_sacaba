@@ -6,7 +6,7 @@ use App\Models\Campeonato;
 use App\Models\Equipo;
 use App\Models\Incidencia;
 use App\Models\Jugador;
-use App\Services\CloudinaryImageService;
+use App\Services\LocalImageService;
 use App\Services\ConfiguracionFormatoService;
 use App\Services\TablaPosicionesService;
 use Illuminate\Http\Request;
@@ -20,7 +20,7 @@ class CampeonatoController extends Controller
     public function __construct(
         private TablaPosicionesService $tablaPosiciones,
         private ConfiguracionFormatoService $configuracionFormato,
-        private CloudinaryImageService $imagenes,
+        private LocalImageService $imagenes,
     )
     {
         $this->middleware('auth');
@@ -32,12 +32,13 @@ class CampeonatoController extends Controller
         $user = auth()->user();
         $campeonatos = Campeonato::query()
             ->with('organizador:id,name')
+            ->when(! auth()->user()->esDesarrollador() && auth()->user()->rol !== \App\Models\User::ROLE_ORGANIZADOR, fn ($q) => $q->aprobados())
             ->when($user->rol === \App\Models\User::ROLE_ORGANIZADOR, fn ($q) => $q->where('usuario_creador', $user->id))
             ->when($user->rol === \App\Models\User::ROLE_DELEGADO, fn ($q) => $q
                 ->whereHas('equipos', fn ($equipos) => $equipos
                     ->where('equipos.delegado_id', $user->id)
                     ->whereIn('campeonato_equipo.estado', ['pendiente', 'aprobado'])))
-            ->latest()->get();
+            ->orderByRaw("CASE WHEN aprobacion_estado = 'pendiente' THEN 0 ELSE 1 END")->latest()->get();
         return view('campeonatos.index', compact('campeonatos'));
     }
 
@@ -47,8 +48,9 @@ class CampeonatoController extends Controller
 
         $campeonatos = Campeonato::query()
             ->with('organizador:id,name')
+            ->when(! auth()->user()->esDesarrollador() && auth()->user()->rol !== \App\Models\User::ROLE_ORGANIZADOR, fn ($q) => $q->aprobados())
             ->withCount(['equipos as equipos_aprobados_count' => fn ($q) => $q->where('campeonato_equipo.estado', 'aprobado')])
-            ->where('inscripciones_abiertas', true)
+            ->aprobados()->where('inscripciones_abiertas', true)
             ->noFinalizadosActuales()
             ->where(fn ($q) => $q->whereNull('fecha_limite_inscripcion')->orWhereDate('fecha_limite_inscripcion', '>=', today()))
             ->when($busqueda !== '', fn ($q) => $q->where('nombre', 'like', '%'.$busqueda.'%'))
@@ -63,19 +65,21 @@ class CampeonatoController extends Controller
 
     public function store(Request $request)
     {
+        $request->merge([
+            'jugadores_cancha' => $request->input('modalidad'),
+            'min_jugadores_equipo' => $request->input('min_jugadores_equipo', $request->input('modalidad')),
+        ]);
         $data = $this->validar($request);
         $data['estado'] = 'pendiente';
-        $data['formato_config'] = [];
         unset($data['eliminar_portada']);
-        $nuevaPortadaCloudinary = null;
+        $nuevaPortada = null;
         if ($request->hasFile('portada')) {
             try {
                 $subida = $this->imagenes->subir($request->file('portada'), 'campeonatos');
-                $nuevaPortadaCloudinary = $subida['public_id'];
-                $data['portada'] = null;
-                $data['portada_cloudinary_id'] = $nuevaPortadaCloudinary;
+                $nuevaPortada = $subida;
+                $data['portada'] = $nuevaPortada;
             } catch (Throwable $error) {
-                Log::warning('No se pudo subir la portada del campeonato a Cloudinary.', [
+                Log::warning('No se pudo subir la portada del campeonato en el almacenamiento local.', [
                     'error' => $error->getMessage(),
                 ]);
 
@@ -89,11 +93,11 @@ class CampeonatoController extends Controller
         try {
             Campeonato::create($data);
         } catch (Throwable $error) {
-            $this->eliminarImagenCloudinarySinInterrumpir($nuevaPortadaCloudinary);
+            $this->eliminarImagenLocalSinInterrumpir($nuevaPortada);
 
             throw $error;
         }
-        return redirect()->route('campeonatos.index')->with('mensaje', 'Campeonato creado exitosamente.');
+        return redirect()->route('campeonatos.index')->with('mensaje', 'Borrador guardado. Abre el campeonato para enviarlo a revisión.');
     }
 
     public function show(Campeonato $campeonato)
@@ -128,7 +132,7 @@ class CampeonatoController extends Controller
             }
         }
         $partidos->loadMissing(['equipoLocal', 'equipoVisita', 'nominas']);
-        $tabla = $this->tablaPosiciones->calcular($equipos, $partidos);
+        $tabla = $campeonato->tieneTablaPosiciones() ? $this->tablaPosiciones->calcular($equipos, $partidos) : [];
         $tablasGrupos = collect();
         if ($campeonato->formato === 'grupos_eliminacion') {
             $tablasGrupos = $fases->where('tipo', 'grupo')->values()
@@ -171,14 +175,15 @@ class CampeonatoController extends Controller
             ->filter(fn ($jugador) => $jugador->amarillas_count > 0 || $jugador->rojas_count > 0)
             ->sortByDesc(fn ($jugador) => ($jugador->rojas_count * 1000) + $jugador->amarillas_count)
             ->values();
-        $mostrarLlaves = in_array($campeonato->formato, ['grupos_eliminacion', 'eliminacion'], true)
-            || $fases->contains('tipo', 'eliminacion');
-        $partidosEliminacion = $partidos
-            ->filter(fn ($partido) => $partido->fase?->tipo === 'eliminacion')
-            ->groupBy(fn ($partido) => (int) ($partido->ronda_number ?: 1));
+        ['mostrarLlaves' => $mostrarLlaves, 'llaves' => $llaves, 'tercerLugar' => $tercerLugar]
+            = app(\App\Services\LlavesCampeonatoService::class)->calcular(
+                $campeonato,
+                $equipos,
+                $campeonato->partidos()->with(['fase', 'equipoLocal', 'equipoVisita'])->get()
+            );
+
         $misEquipos = collect();
         $equipoInscritoEnCampeonato = null;
-        $miSolicitudArbitro = null;
         if (auth()->user()->rol === \App\Models\User::ROLE_DELEGADO) {
             $misEquipos = Equipo::where('delegado_id', auth()->id())
                 ->with(['campeonatos' => fn ($q) => $q->where('campeonatos.id', $campeonato->id)])
@@ -190,10 +195,7 @@ class CampeonatoController extends Controller
                 true
             ));
         }
-        if (auth()->user()->rol === \App\Models\User::ROLE_ARBITRO) {
-            $miSolicitudArbitro = $campeonato->arbitros()->where('users.id', auth()->id())->first()?->pivot;
-        }
-        return view('campeonatos.show', compact('campeonato', 'equipos', 'solicitudesPendientes', 'equiposRetirados', 'partidos', 'etiquetasFases', 'tabla', 'tablasGrupos', 'opcionesClasificados', 'llavesGeneradas', 'faseGruposIniciada', 'configuracionCopaBloqueada', 'goleadores', 'tarjetas', 'mostrarLlaves', 'partidosEliminacion', 'fases', 'misEquipos', 'equipoInscritoEnCampeonato', 'miSolicitudArbitro'));
+        return view('campeonatos.show', compact('campeonato', 'equipos', 'solicitudesPendientes', 'equiposRetirados', 'partidos', 'etiquetasFases', 'tabla', 'tablasGrupos', 'opcionesClasificados', 'llavesGeneradas', 'faseGruposIniciada', 'configuracionCopaBloqueada', 'goleadores', 'tarjetas', 'mostrarLlaves', 'llaves', 'tercerLugar', 'fases', 'misEquipos', 'equipoInscritoEnCampeonato'));
     }
 
     public function actualizarClasificados(Request $request, Campeonato $campeonato)
@@ -224,17 +226,34 @@ class CampeonatoController extends Controller
         $configuracion = $campeonato->formato_config ?? [];
         $configuracion['qualifiers_per_group'] = $cantidad;
         $configuracion['elimination_start'] = $this->configuracionFormato->inicioEliminatoria($total);
-        $configuracion['eliminations_home_away'] = $request->boolean('ida_vuelta_eliminatorias');
-        $configuracion['third_place_match'] = $request->boolean('partido_tercer_lugar');
         $campeonato->update(['formato_config' => $configuracion]);
 
         return back()->with('mensaje', "Ahora clasifican {$cantidad} equipos por grupo ({$total} en total).");
     }
 
-    public function edit(Campeonato $campeonato) { return view('campeonatos.edit', compact('campeonato')); }
+    public function edit(Campeonato $campeonato)
+    {
+        abort_if($campeonato->aprobacion_estado === 'pendiente', 403);
+        $soloDatosInformativos = $campeonato->aprobacion_estado === 'aprobado';
+
+        return view('campeonatos.edit', compact('campeonato', 'soloDatosInformativos'));
+    }
 
     public function update(Request $request, Campeonato $campeonato)
     {
+        return DB::transaction(function () use ($request, $campeonato) {
+            $actual = Campeonato::lockForUpdate()->findOrFail($campeonato->id);
+            return $this->actualizarDatos($request, $actual);
+        });
+    }
+
+    private function actualizarDatos(Request $request, Campeonato $campeonato)
+    {
+        abort_if($campeonato->aprobacion_estado === 'pendiente', 409, 'El campeonato está en revisión.');
+        if ($campeonato->aprobacion_estado === 'aprobado') {
+            return $this->actualizarDatosInformativos($request, $campeonato);
+        }
+
         $data = $this->validar($request);
         $eliminarPortada = $request->boolean('eliminar_portada');
         unset($data['portada'], $data['eliminar_portada']);
@@ -258,23 +277,21 @@ class CampeonatoController extends Controller
         }
         $data['inscripciones_abiertas'] = $request->boolean('inscripciones_abiertas');
         $portadaAnterior = $campeonato->portada;
-        $portadaCloudinaryAnterior = $campeonato->portada_cloudinary_id;
-        $nuevaPortadaCloudinary = null;
+        $nuevaPortada = null;
         $cambiaFormato = $data['formato'] !== $campeonato->formato;
         if ($cambiaFormato && auth()->user()->cannot('changeFormat', $campeonato)) {
             return back()->withErrors(['error' => 'No se puede cambiar el formato después de generar partidos.']);
         }
-        if ($cambiaFormato) {
-            $data['formato_config'] = [];
+        if ($campeonato->partidos()->exists()) {
+            $data['formato_config'] = $campeonato->formato_config;
         }
         if ($request->hasFile('portada')) {
             try {
                 $subida = $this->imagenes->subir($request->file('portada'), 'campeonatos');
-                $nuevaPortadaCloudinary = $subida['public_id'];
-                $data['portada'] = null;
-                $data['portada_cloudinary_id'] = $nuevaPortadaCloudinary;
+                $nuevaPortada = $subida;
+                $data['portada'] = $nuevaPortada;
             } catch (Throwable $error) {
-                Log::warning('No se pudo reemplazar la portada del campeonato en Cloudinary.', [
+                Log::warning('No se pudo reemplazar la portada del campeonato en el almacenamiento local.', [
                     'campeonato_id' => $campeonato->id,
                     'error' => $error->getMessage(),
                 ]);
@@ -285,17 +302,13 @@ class CampeonatoController extends Controller
             }
         } elseif ($eliminarPortada) {
             $data['portada'] = null;
-            $data['portada_cloudinary_id'] = null;
         }
         try {
             $campeonato->update($data);
         } catch (Throwable $error) {
-            $this->eliminarImagenCloudinarySinInterrumpir($nuevaPortadaCloudinary);
+            $this->eliminarImagenLocalSinInterrumpir($nuevaPortada);
 
             throw $error;
-        }
-        if ($request->hasFile('portada') || $eliminarPortada) {
-            $this->eliminarImagenCloudinarySinInterrumpir($portadaCloudinaryAnterior);
         }
         if ($portadaAnterior && ($request->hasFile('portada') || $eliminarPortada) && Storage::disk('public')->exists($portadaAnterior)) {
             Storage::disk('public')->delete($portadaAnterior);
@@ -303,25 +316,72 @@ class CampeonatoController extends Controller
         return redirect()->route('campeonatos.show', $campeonato)->with('mensaje', 'Campeonato actualizado.');
     }
 
-    public function destroy(Campeonato $campeonato)
+    private function actualizarDatosInformativos(Request $request, Campeonato $campeonato)
     {
-        if ($campeonato->equipos()->exists() || $campeonato->partidos()->exists()) return back()->withErrors(['error' => 'No se puede eliminar un campeonato con equipos o partidos.']);
-        $portada = $campeonato->portada;
-        if ($campeonato->portada_cloudinary_id) {
+        $data = $request->validate([
+            'fecha_fin' => ['sometimes', 'nullable', 'date', 'after:'.$campeonato->fecha_inicio->format('Y-m-d')],
+            'min_jugadores_partido' => ['sometimes', 'required', 'integer', 'min:1', 'max:'.$campeonato->jugadores_cancha],
+            'nombre' => 'required|string|max:255',
+            'descripcion' => 'nullable|string|max:3000',
+            'reglamento_interno' => 'nullable|string|max:10000',
+            'portada' => 'nullable|image|mimes:jpg,jpeg,png,webp|max:4096',
+            'eliminar_portada' => 'nullable|boolean',
+        ]);
+        if (! empty($data['fecha_fin']) && $campeonato->partidos()
+            ->whereDate('fecha', '>', $data['fecha_fin'])->exists()) {
+            return back()->withErrors([
+                'fecha_fin' => 'La fecha de fin no puede ser anterior a la fecha de un partido del campeonato.',
+            ])->withInput();
+        }
+        $eliminarPortada = $request->boolean('eliminar_portada');
+        unset($data['eliminar_portada']);
+
+        $portadaAnterior = $campeonato->portada;
+        $nuevaPortada = null;
+        if ($request->hasFile('portada')) {
             try {
-                $this->imagenes->eliminar($campeonato->portada_cloudinary_id);
+                $nuevaPortada = $this->imagenes->subir($request->file('portada'), 'campeonatos');
+                $data['portada'] = $nuevaPortada;
             } catch (Throwable $error) {
-                Log::warning('No se pudo eliminar de Cloudinary la portada del campeonato.', [
+                Log::warning('No se pudo reemplazar la portada del campeonato en el almacenamiento local.', [
                     'campeonato_id' => $campeonato->id,
                     'error' => $error->getMessage(),
                 ]);
 
                 return back()->withErrors([
-                    'error' => 'No se pudo eliminar la portada de Cloudinary. Inténtalo nuevamente.',
-                ]);
+                    'portada' => 'No se pudo subir la nueva portada. La imagen anterior se conserva.',
+                ])->withInput();
             }
+        } elseif ($eliminarPortada) {
+            $data['portada'] = null;
         }
-        $campeonato->delete();
+
+        try {
+            $campeonato->update($data);
+        } catch (Throwable $error) {
+            $this->eliminarImagenLocalSinInterrumpir($nuevaPortada);
+
+            throw $error;
+        }
+
+        if ($portadaAnterior && ($request->hasFile('portada') || $eliminarPortada) && Storage::disk('public')->exists($portadaAnterior)) {
+            Storage::disk('public')->delete($portadaAnterior);
+        }
+
+        return redirect()->route('campeonatos.show', $campeonato)->with('mensaje', 'Datos del campeonato actualizados.');
+    }
+
+    public function destroy(Campeonato $campeonato)
+    {
+        if (! auth()->user()->esDesarrollador() && ($campeonato->equipos()->exists() || $campeonato->partidos()->exists())) return back()->withErrors(['error' => 'No se puede eliminar un campeonato con equipos o partidos.']);
+        $portada = $campeonato->portada;
+        DB::transaction(function () use ($campeonato) {
+            // Conservar equipos y jugadores vinculados por la referencia antigua.
+            Equipo::where('campeonato_id', $campeonato->id)->update(['campeonato_id' => null]);
+            // Las incidencias no tienen una clave foranea con borrado en cascada.
+            Incidencia::whereIn('partido_id', $campeonato->partidos()->select('id'))->delete();
+            $campeonato->delete();
+        });
         if ($portada && Storage::disk('public')->exists($portada)) Storage::disk('public')->delete($portada);
         return redirect()->route('campeonatos.index')->with('mensaje', 'Campeonato eliminado.');
     }
@@ -329,6 +389,7 @@ class CampeonatoController extends Controller
     public function generarFixture(Campeonato $campeonato)
     {
         $this->authorize('generateFixture', $campeonato);
+        abort_unless($campeonato->aprobacion_estado === 'aprobado', 403, 'El campeonato requiere aprobación.');
         if ($campeonato->fases()->exists() || $campeonato->partidos()->exists()) return back()->withErrors(['error' => 'El fixture ya fue generado.']);
 
         if ($campeonato->equipos()->wherePivot('estado', 'pendiente')->exists()) {
@@ -370,17 +431,17 @@ class CampeonatoController extends Controller
         }
     }
 
-    private function eliminarImagenCloudinarySinInterrumpir(?string $publicId): void
+    private function eliminarImagenLocalSinInterrumpir(?string $ruta): void
     {
-        if (! $publicId) {
+        if (! $ruta) {
             return;
         }
 
         try {
-            $this->imagenes->eliminar($publicId);
+            $this->imagenes->eliminar($ruta);
         } catch (Throwable $error) {
-            Log::warning('No se pudo limpiar una portada reemplazada de Cloudinary.', [
-                'public_id' => $publicId,
+            Log::warning('No se pudo limpiar una portada reemplazada del almacenamiento local.', [
+                'ruta' => $ruta,
                 'error' => $error->getMessage(),
             ]);
         }
@@ -391,6 +452,7 @@ class CampeonatoController extends Controller
         $data = $request->validate([
             'nombre' => 'required|string|max:255',
             'descripcion' => 'nullable|string|max:3000',
+            'reglamento_interno' => 'nullable|string|max:10000',
             'portada' => 'nullable|image|mimes:jpg,jpeg,png,webp|max:4096',
             'eliminar_portada' => 'nullable|boolean',
             'fecha_inicio' => 'required|date',
@@ -398,8 +460,13 @@ class CampeonatoController extends Controller
             'fecha_limite_inscripcion' => 'nullable|date|before_or_equal:fecha_inicio',
             'inscripciones_abiertas' => 'nullable|boolean',
             'formato' => 'required|in:liga,grupos_eliminacion,eliminacion',
+            'vueltas_liga' => 'nullable|integer|in:1,2',
+            'vueltas_grupos' => 'nullable|integer|in:1,2',
+            'ida_vuelta_eliminatorias' => 'nullable|boolean',
+            'partido_tercer_lugar' => 'nullable|boolean',
             'modalidad' => 'required|integer|in:5,6,7,8,9,11',
             'jugadores_cancha' => 'required|integer|min:1|max:50',
+            'min_jugadores_partido' => 'nullable|integer|min:1|lte:jugadores_cancha',
             'min_jugadores_equipo' => 'required|integer|min:1|gte:jugadores_cancha|max:100',
             'max_jugadores_equipo' => 'required|integer|min:1|gte:min_jugadores_equipo|max:100',
             'categoria_edad' => 'required|in:sub_7,sub_9,sub_11,sub_13,sub_15,sub_17,sub_20,libre,mas_30,mas_35,mas_40,mas_45,mas_50,personalizada',
@@ -408,6 +475,17 @@ class CampeonatoController extends Controller
             'edad_max' => 'nullable|integer|min:0|max:99|gte:edad_min',
             'sexo' => 'required|in:masculino,femenino,mixto',
         ]);
+
+        $data['formato_config'] = $data['formato'] === 'liga'
+            ? ['league_rounds' => (int) ($data['vueltas_liga'] ?? 1)]
+            : [
+                'eliminations_home_away' => $request->boolean('ida_vuelta_eliminatorias'),
+                'third_place_match' => $request->boolean('partido_tercer_lugar'),
+            ];
+        if ($data['formato'] === 'grupos_eliminacion') {
+            $data['formato_config']['group_rounds'] = (int) ($data['vueltas_grupos'] ?? 1);
+        }
+        unset($data['vueltas_liga'], $data['vueltas_grupos'], $data['ida_vuelta_eliminatorias'], $data['partido_tercer_lugar']);
 
         $categoriaSeleccionada = $data['categoria_edad'];
         if ($categoriaSeleccionada === 'personalizada') {

@@ -2,7 +2,6 @@
 
 namespace App\Models;
 
-use App\Services\CloudinaryImageService;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 
@@ -14,14 +13,36 @@ use Illuminate\Database\Eloquent\Model;
  */
 class Campeonato extends Model
 {
+    public function tieneTablaPosiciones(): bool
+    {
+        return in_array($this->formato, ['liga', 'liga_ida_vuelta', 'grupos_eliminacion', 'series_interseries', 'liga_semifinal_final'], true);
+    }
+
     use HasFactory;
+
+    protected $attributes = ['aprobacion_estado' => 'borrador'];
+
+    public function scopeAprobados($query)
+    {
+        return $query->where($this->qualifyColumn('aprobacion_estado'), 'aprobado');
+    }
+
+    public function getAprobacionLabelAttribute(): string
+    {
+        return [
+            'borrador' => 'Borrador',
+            'pendiente' => 'Pendiente de aprobación',
+            'devuelto' => 'Devuelto para corregir',
+            'aprobado' => 'Aprobado',
+        ][$this->aprobacion_estado] ?? 'Borrador';
+    }
 
     // Campos que se pueden completar en creación/actualización
     protected $fillable = [
-        'nombre', 'descripcion', 'portada', 'portada_cloudinary_id', 'fecha_inicio', 'fecha_fin', 'estado',
+        'nombre', 'descripcion', 'reglamento_interno', 'portada', 'fecha_inicio', 'fecha_fin', 'estado',
         'usuario_creador', 'formato', 'formato_config',
         'fecha_limite_inscripcion', 'inscripciones_abiertas',
-        'modalidad', 'jugadores_cancha', 'min_jugadores_equipo', 'max_jugadores_equipo',
+        'modalidad', 'jugadores_cancha', 'min_jugadores_partido', 'min_jugadores_equipo', 'max_jugadores_equipo',
         'categoria_edad', 'edad_min', 'edad_max', 'sexo',
     ];
 
@@ -34,6 +55,11 @@ class Campeonato extends Model
         'inscripciones_abiertas' => 'boolean',
     ];
 
+    public function getMinimoParaJugarAttribute(): int
+    {
+        return (int) ($this->min_jugadores_partido ?? $this->jugadores_cancha);
+    }
+
     // Formatos que se muestran al usuario. Las variantes (una/dos vueltas)
     // se configuran después y ya no aparecen como formatos separados.
     public static $formatos = [
@@ -42,14 +68,9 @@ class Campeonato extends Model
         'eliminacion' => 'Relámpago — Eliminación directa',
     ];
 
-    /** URL optimizada de Cloudinary o, para registros antiguos, del disco local. */
+    /** URL pública de la imagen almacenada en el disco local. */
     public function getPortadaUrlAttribute(): ?string
     {
-        if ($this->portada_cloudinary_id) {
-            return app(CloudinaryImageService::class)
-                ->urlOptimizada($this->portada_cloudinary_id, 1280, 720);
-        }
-
         return $this->portada
             ? asset('storage/'.ltrim($this->portada, '/'))
             : null;
@@ -183,13 +204,5 @@ class Campeonato extends Model
     public function partidos()
     {
         return $this->hasMany(Partido::class);
-    }
-
-    /** Árbitros que solicitaron participar en este campeonato. */
-    public function arbitros()
-    {
-        return $this->belongsToMany(User::class, 'arbitro_campeonato', 'campeonato_id', 'arbitro_id')
-            ->withPivot('estado', 'mensaje', 'motivo_respuesta', 'gestionado_por', 'gestionado_at')
-            ->withTimestamps();
     }
 }

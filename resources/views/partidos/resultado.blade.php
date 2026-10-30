@@ -1,6 +1,6 @@
 {{--
     Vista para registrar resultado de partido.
-    El árbitro o organizador carga goles y marca el partido como jugado.
+    El organizador carga goles y marca el partido como jugado.
 --}}
 @extends('layouts.app')
 
@@ -99,6 +99,20 @@
                         </div>
                     </div>
                 </div>
+
+                @if($desempate['requiere_penales'])
+                    <fieldset class="form-panel rounded p-3 mb-4">
+                        <legend class="fs-5">Desempate por penales</legend>
+                        <p>{{ $desempate['vuelta'] ? 'El marcador global' : 'El partido' }} esta empatado {{ $desempate['local'] }}?{{ $desempate['visita'] }}. Registra la tanda completa con un ganador.</p>
+                        <div class="row g-3">
+                            <div class="col-6"><label for="penales_local" class="form-label">{{ $partido->equipoLocal->nombre }}</label><input id="penales_local" name="penales_local" type="number" min="0" max="999" required class="form-control" value="{{ old('penales_local') }}"></div>
+                            <div class="col-6"><label for="penales_visita" class="form-label">{{ $partido->equipoVisita->nombre }}</label><input id="penales_visita" name="penales_visita" type="number" min="0" max="999" required class="form-control" value="{{ old('penales_visita') }}"></div>
+                        </div>
+                        <small>Los penales de la tanda no suman al marcador ni a los goleadores.</small>
+                    </fieldset>
+                @elseif($desempate['doble'])
+                    <p class="alert alert-info">{{ $desempate['vuelta'] ? 'Vuelta: primero debe estar registrado el resultado de ida. Los penales solo se usan si el global termina empatado.' : 'Partido de ida: el desempate se resuelve al finalizar la vuelta.' }}</p>
+                @endif
 
                 <div class="d-flex gap-3">
                     <button type="submit" class="btn btn-naranja" @disabled($partido->nominas->count() !== 2)>Confirmar resultado</button>

@@ -3,7 +3,6 @@
 namespace App\Models;
 
 use App\Models\Concerns\TieneWhatsappBoliviano;
-use App\Services\CloudinaryImageService;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Support\Facades\Storage;
@@ -28,10 +27,8 @@ class Jugador extends Model
         'whatsapp_opt_in_at',
         'fecha_nacimiento',
         'sexo',
-        'posicion',
         'numero',
         'foto',
-        'foto_cloudinary_id',
         'equipo_id',
         'estado',
     ];
@@ -56,11 +53,6 @@ class Jugador extends Model
      */
     public function getFotoUrlAttribute(): string
     {
-        if ($this->foto_cloudinary_id) {
-            return app(CloudinaryImageService::class)
-                ->urlOptimizada($this->foto_cloudinary_id, 480, 480);
-        }
-
         if ($this->foto && Storage::disk('public')->exists($this->foto)) {
             return $this->urlConBase('/storage/' . ltrim($this->foto, '/'));
         }

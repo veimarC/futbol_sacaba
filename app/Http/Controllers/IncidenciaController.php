@@ -121,8 +121,7 @@ class IncidenciaController extends Controller
     private function autorizarGestion(Partido $partido, User $user): void
     {
         $permitido = $user->esDesarrollador()
-            || ($user->rol === User::ROLE_ORGANIZADOR && (int) $partido->campeonato->usuario_creador === (int) $user->id)
-            || ($user->rol === User::ROLE_ARBITRO && (int) $partido->arbitro_id === (int) $user->id);
+            || ($user->rol === User::ROLE_ORGANIZADOR && (int) $partido->campeonato->usuario_creador === (int) $user->id);
 
         abort_unless($permitido, 403, 'No tienes permisos para gestionar incidencias.');
     }

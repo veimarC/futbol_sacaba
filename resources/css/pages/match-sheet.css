@@ -1,0 +1,43 @@
+
+.match-sheet .sheet-score,.match-sheet .sheet-team,.sheet-history,.match-sheet .control-result,.match-sheet .sheet-close form {background:#f1f5f9;color:#173052;border:1px solid #cbd5e1;border-radius:16px;padding:1.2rem}
+.sheet-score {margin-bottom:1.2rem;text-align:center}
+.sheet-scoreline {display:grid;grid-template-columns:1fr auto 1fr;align-items:center;gap:1rem;margin:.8rem 0}
+.sheet-scoreline b {font-size:2.5rem;white-space:nowrap}
+.sheet-score-team {display:flex;flex-direction:column;align-items:center;gap:.6rem;min-width:0;overflow-wrap:anywhere}
+.sheet-score-team .team-crest {width:64px;height:64px;flex:0 0 64px}
+.sheet-player-identity {display:flex;align-items:center;gap:.6rem}
+.sheet-player-photo {width:44px;height:44px;flex:0 0 44px;object-fit:cover;border-radius:10px;background:#e2e8f0;border:1px solid #cbd5e1}
+.match-sheet .match-roster-grid {display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:1rem;align-items:start}
+.match-sheet .sheet-team header {color:#173052;background:transparent;display:flex;align-items:center;gap:.6rem;flex-wrap:wrap}
+.match-sheet .sheet-team header h3 {font-size:1.2rem}
+.sheet-table {--bs-table-bg:transparent;--bs-table-color:#173052;--bs-table-border-color:#cbd5e1;font-size:.9rem}
+.sheet-table td,.sheet-table th {padding:.8rem .35rem}
+.sheet-table details summary {cursor:pointer}
+.sheet-actions {margin-top:.6rem}
+.sheet-actions>summary {color:#174b85;font-weight:700;padding:.4rem 0}
+.sheet-actions form {display:flex;flex-wrap:wrap;gap:.4rem;padding:.5rem 0}
+.sheet-actions form>span {width:100%}
+.match-sheet button {min-height:42px}
+.sheet-history-row {display:flex;justify-content:space-between;gap:1rem;align-items:center;padding:.7rem 0;border-bottom:1px solid #cbd5e1}
+.sheet-team-tabs {display:none}
+.sheet-close {width:100%}
+.match-sheet .control-result {flex-wrap:wrap}
+.match-sheet .sheet-close .form-panel {background:#e2eaf4;color:#173052}
+.match-sheet .sheet-close .form-label {color:#173052}
+@media(max-width:767px){
+.match-sheet .match-roster-grid {grid-template-columns:1fr}
+.sheet-team-tabs {display:flex;gap:.5rem;margin-bottom:.8rem}
+.sheet-team-tabs button {flex:1;white-space:normal}
+.sheet-team-tabs [aria-pressed="true"] {background:#ff8a00;color:#132b4d;border-color:#ff8a00}
+.match-sheet[data-sheet-ready] .sheet-team:not(.is-selected) {display:none}
+.sheet-scoreline {gap:.5rem;font-size:.85rem}
+.sheet-scoreline b {font-size:1.8rem}
+.sheet-score-team .team-crest {width:48px;height:48px;flex-basis:48px}
+.sheet-player-identity {flex-wrap:wrap}
+.match-sheet .sheet-team {padding:.8rem}
+}
+
+.match-sheet .sheet-team .text-warning {color:#8a5100!important}
+.match-sheet .control-result-score {color:#173052}
+.match-sheet .sheet-team .roster-empty {color:#173052}
+.match-sheet .sheet-team header small {color:#475569}

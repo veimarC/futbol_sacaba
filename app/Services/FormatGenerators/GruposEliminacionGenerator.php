@@ -95,6 +95,16 @@ class GruposEliminacionGenerator implements FormatGeneratorInterface
                             'ronda_number' => $ronda + 1,
                             'orden_en_ronda' => $i + 1,
                         ]);
+                        if ((int) ($this->options['group_rounds'] ?? 1) === 2) {
+                            Partido::create([
+                                'campeonato_id' => $this->campeonato->id,
+                                'fase_id' => $fase->id,
+                                'equipo_local_id' => $visita->id,
+                                'equipo_visita_id' => $local->id,
+                                'ronda_number' => count($pairings) + $ronda + 1,
+                                'orden_en_ronda' => $i + 1,
+                            ]);
+                        }
                         $i++;
                     }
                 }

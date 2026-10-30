@@ -8,7 +8,7 @@ return new class extends Migration
 {
     /**
      * Crear tabla 'jugadores' para almacenar jugadores de equipos.
-     * Campos básicos: nombre, apellido, dni, fecha_nacimiento, posicion, numero, foto (nullable), equipo_id (FK).
+     * Campos básicos: nombre, apellido, dni, fecha_nacimiento, numero, foto (nullable), equipo_id (FK).
      */
     public function up(): void
     {
@@ -18,7 +18,6 @@ return new class extends Migration
             $table->string('apellido')->nullable();
             $table->string('dni')->nullable();
             $table->date('fecha_nacimiento')->nullable();
-            $table->string('posicion')->nullable();
             $table->unsignedInteger('numero')->nullable();
             $table->string('foto')->nullable(); // path relativo en storage/app/public/jugadores
             $table->unsignedBigInteger('equipo_id');

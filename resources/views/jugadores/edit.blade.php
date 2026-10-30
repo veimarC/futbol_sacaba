@@ -57,11 +57,6 @@
                 </div>
 
                 <div class="mb-3">
-                    <label class="form-label">Posición</label>
-                    <input type="text" name="posicion" class="form-control" value="{{ old('posicion', $jugador->posicion) }}">
-                </div>
-
-                <div class="mb-3">
                     <label class="form-label">Equipo</label>
                     <select name="equipo_id" class="form-select" required>
                         @foreach($equipos as $e)
@@ -75,7 +70,7 @@
                     <label class="form-label">Foto (opcional)</label>
                     <div class="mb-2"><img src="{{ $jugador->foto_url }}" alt="Foto de {{ $jugador->nombre }}" class="photo-md"></div>
                     <input type="file" name="foto" class="form-control">
-                    <div class="form-text">La nueva foto se optimizará en Cloudinary y reemplazará la anterior.</div>
+                    <div class="form-text">La nueva foto reemplazará la anterior.</div>
                 </div>
 
                 <div class="d-grid">

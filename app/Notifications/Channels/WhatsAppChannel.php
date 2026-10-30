@@ -13,7 +13,9 @@ class WhatsAppChannel
 
     public function send(object $notifiable, Notification $notification): ?array
     {
-        if (blank($notifiable->whatsapp) || ! method_exists($notification, 'toWhatsApp')) {
+        if (! config('services.whatsapp.enabled')
+            || blank($notifiable->whatsapp)
+            || blank($notifiable->whatsapp_opt_in_at)) {
             return null;
         }
 
@@ -24,10 +26,14 @@ class WhatsAppChannel
                     return $this->whatsapp->enviarPlantilla(
                         $notifiable->whatsapp,
                         $plantilla['name'],
-                        $plantilla['parameters'],
-                        $plantilla['language'],
+                        $plantilla['parameters'] ?? [],
+                        $plantilla['language'] ?? 'es',
                     );
                 }
+            }
+
+            if (! method_exists($notification, 'toWhatsApp')) {
+                return null;
             }
 
             return $this->whatsapp->enviarTexto(
@@ -36,7 +42,7 @@ class WhatsAppChannel
             );
         } catch (\Throwable $error) {
             Log::warning('No se pudo enviar una notificación por WhatsApp.', [
-                'usuario_id' => $notifiable->getKey(),
+                'usuario_id' => method_exists($notifiable, 'getKey') ? $notifiable->getKey() : null,
                 'notificacion' => $notification::class,
                 'error' => $error->getMessage(),
             ]);

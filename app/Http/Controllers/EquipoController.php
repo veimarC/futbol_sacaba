@@ -7,7 +7,7 @@ use App\Models\Equipo;
 use App\Models\Jugador;
 use App\Models\User;
 use App\Notifications\NotificacionPlataforma;
-use App\Services\CloudinaryImageService;
+use App\Services\LocalImageService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
@@ -16,7 +16,7 @@ use Throwable;
 
 class EquipoController extends Controller
 {
-    public function __construct(private readonly CloudinaryImageService $imagenes)
+    public function __construct(private readonly LocalImageService $imagenes)
     {
         $this->middleware('auth');
         $this->authorizeResource(Equipo::class, 'equipo', ['except' => ['store', 'solicitarInscripcion', 'gestionarSolicitud']]);
@@ -76,13 +76,13 @@ class EquipoController extends Controller
             return back()->withErrors(['campeonato_id' => 'Ya tienes un equipo inscrito o pendiente en este campeonato. Puedes participar en otros campeonatos, pero no repetir en el mismo.'])->withInput();
         }
 
-        $nuevoEscudoCloudinary = null;
+        $nuevoEscudo = null;
         if ($request->hasFile('escudo')) {
             try {
                 $subida = $this->imagenes->subir($request->file('escudo'), 'escudos');
-                $nuevoEscudoCloudinary = $subida['public_id'];
+                $nuevoEscudo = $subida;
             } catch (Throwable $error) {
-                Log::warning('No se pudo subir el escudo del equipo a Cloudinary.', [
+                Log::warning('No se pudo subir el escudo del equipo en el almacenamiento local.', [
                     'error' => $error->getMessage(),
                 ]);
 
@@ -93,7 +93,7 @@ class EquipoController extends Controller
         }
 
         try {
-            $equipo = DB::transaction(function () use ($data, $campeonato, $nuevoEscudoCloudinary) {
+            $equipo = DB::transaction(function () use ($data, $campeonato, $nuevoEscudo) {
                 $equipo = Equipo::create([
                     'nombre' => $data['nombre'],
                 // Mantiene poblada la columna histórica mientras la relación
@@ -101,8 +101,7 @@ class EquipoController extends Controller
                     'campeonato_id' => $campeonato?->id,
                     'ciudad' => $data['ciudad'] ?? null,
                     'delegado_id' => auth()->id(),
-                    'escudo' => null,
-                    'escudo_cloudinary_id' => $nuevoEscudoCloudinary,
+                    'escudo' => $nuevoEscudo,
                 ]);
                 if ($campeonato) {
                     $equipo->campeonatos()->attach($campeonato->id, ['estado' => 'pendiente']);
@@ -111,7 +110,7 @@ class EquipoController extends Controller
                 return $equipo;
             });
         } catch (Throwable $error) {
-            $this->eliminarImagenCloudinarySinInterrumpir($nuevoEscudoCloudinary);
+            $this->eliminarImagenLocalSinInterrumpir($nuevoEscudo);
 
             throw $error;
         }
@@ -207,18 +206,16 @@ class EquipoController extends Controller
         $data = $request->validate(['nombre' => 'required|string|max:255', 'ciudad' => 'nullable|string|max:255', 'escudo' => 'nullable|image|max:2048']);
         unset($data['escudo']);
 
-        $escudoCloudinaryAnterior = $equipo->escudo_cloudinary_id;
         $escudoLocalAnterior = $equipo->escudo;
-        $nuevoEscudoCloudinary = null;
+        $nuevoEscudo = null;
 
         if ($request->hasFile('escudo')) {
             try {
                 $subida = $this->imagenes->subir($request->file('escudo'), 'escudos');
-                $nuevoEscudoCloudinary = $subida['public_id'];
-                $data['escudo_cloudinary_id'] = $nuevoEscudoCloudinary;
-                $data['escudo'] = null;
+                $nuevoEscudo = $subida;
+                $data['escudo'] = $nuevoEscudo;
             } catch (Throwable $error) {
-                Log::warning('No se pudo reemplazar el escudo del equipo en Cloudinary.', [
+                Log::warning('No se pudo reemplazar el escudo del equipo en el almacenamiento local.', [
                     'equipo_id' => $equipo->id,
                     'error' => $error->getMessage(),
                 ]);
@@ -232,13 +229,12 @@ class EquipoController extends Controller
         try {
             $equipo->update($data);
         } catch (Throwable $error) {
-            $this->eliminarImagenCloudinarySinInterrumpir($nuevoEscudoCloudinary);
+            $this->eliminarImagenLocalSinInterrumpir($nuevoEscudo);
 
             throw $error;
         }
 
-        if ($nuevoEscudoCloudinary) {
-            $this->eliminarImagenCloudinarySinInterrumpir($escudoCloudinaryAnterior);
+        if ($nuevoEscudo) {
             if ($escudoLocalAnterior && Storage::disk('public')->exists($escudoLocalAnterior)) {
                 Storage::disk('public')->delete($escudoLocalAnterior);
             }
@@ -276,20 +272,6 @@ class EquipoController extends Controller
             ]);
         }
 
-        if ($equipo->escudo_cloudinary_id) {
-            try {
-                $this->imagenes->eliminar($equipo->escudo_cloudinary_id);
-            } catch (Throwable $error) {
-                Log::warning('No se pudo eliminar de Cloudinary el escudo del equipo.', [
-                    'equipo_id' => $equipo->id,
-                    'error' => $error->getMessage(),
-                ]);
-
-                return back()->withErrors([
-                    'error' => 'No se pudo eliminar el escudo de Cloudinary. Inténtalo nuevamente.',
-                ]);
-            }
-        }
         if ($equipo->escudo && Storage::disk('public')->exists($equipo->escudo)) {
             Storage::disk('public')->delete($equipo->escudo);
         }
@@ -393,23 +375,23 @@ class EquipoController extends Controller
 
     private function campeonatosAbiertos()
     {
-        return Campeonato::noFinalizadosActuales()
+        return Campeonato::aprobados()->noFinalizadosActuales()
             ->where('inscripciones_abiertas', true)
             ->where(fn ($q) => $q->whereNull('fecha_limite_inscripcion')->orWhereDate('fecha_limite_inscripcion', '>=', today()))
             ->orderBy('fecha_inicio');
     }
 
-    private function eliminarImagenCloudinarySinInterrumpir(?string $publicId): void
+    private function eliminarImagenLocalSinInterrumpir(?string $ruta): void
     {
-        if (! $publicId) {
+        if (! $ruta) {
             return;
         }
 
         try {
-            $this->imagenes->eliminar($publicId);
+            $this->imagenes->eliminar($ruta);
         } catch (Throwable $error) {
-            Log::warning('No se pudo limpiar un escudo reemplazado de Cloudinary.', [
-                'public_id' => $publicId,
+            Log::warning('No se pudo limpiar un escudo reemplazado del almacenamiento local.', [
+                'ruta' => $ruta,
                 'error' => $error->getMessage(),
             ]);
         }
@@ -417,7 +399,8 @@ class EquipoController extends Controller
 
     private function aceptaInscripciones(Campeonato $campeonato): bool
     {
-        return $campeonato->estado_actual !== 'finalizado'
+        return $campeonato->aprobacion_estado === 'aprobado'
+            && $campeonato->estado_actual !== 'finalizado'
             && $campeonato->inscripciones_abiertas
             && (! $campeonato->fecha_limite_inscripcion || now()->lte($campeonato->fecha_limite_inscripcion->endOfDay()));
     }

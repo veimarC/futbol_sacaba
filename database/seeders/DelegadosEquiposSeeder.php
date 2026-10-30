@@ -32,19 +32,6 @@ class DelegadosEquiposSeeder extends Seeder
             'Sánchez', 'Torrico', 'Vargas', 'Vega', 'Villarroel', 'Zambrana',
         ];
 
-        $posiciones = [
-            1 => 'Portero',
-            2 => 'Lateral Derecho',
-            3 => 'Defensa Central',
-            4 => 'Defensa Central',
-            5 => 'Lateral Izquierdo',
-            6 => 'Mediocampista Defensivo',
-            7 => 'Extremo Derecho',
-            8 => 'Mediocampista',
-            9 => 'Delantero',
-            10 => 'Mediapunta',
-            11 => 'Extremo Izquierdo',
-        ];
 
         for ($numeroDelegado = 3; $numeroDelegado <= 20; $numeroDelegado++) {
             $delegado = User::updateOrCreate(
@@ -81,7 +68,6 @@ class DelegadosEquiposSeeder extends Seeder
                         'dni' => $ci,
                         'fecha_nacimiento' => today()->subYears($edad)->toDateString(),
                         'sexo' => 'masculino',
-                        'posicion' => $posiciones[$dorsal],
                         'estado' => Jugador::ESTADO_APROBADO,
                     ],
                 );

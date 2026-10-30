@@ -51,13 +51,4 @@ return [
         ],
     ],
 
-    // Cloudinary almacena y optimiza escudos, portadas y fotos. Las claves
-    // permanecen en .env y nunca deben enviarse al navegador.
-    'cloudinary' => [
-        'cloud_name' => env('CLOUDINARY_CLOUD_NAME'),
-        'api_key' => env('CLOUDINARY_API_KEY'),
-        'api_secret' => env('CLOUDINARY_API_SECRET'),
-        'secure' => filter_var(env('CLOUDINARY_SECURE', true), FILTER_VALIDATE_BOOL),
-    ],
-
 ];

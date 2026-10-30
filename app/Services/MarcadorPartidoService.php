@@ -10,6 +10,10 @@ class MarcadorPartidoService
 {
     public function sincronizar(Partido $partido): Partido
     {
+        if ($partido->wo_motivo) {
+            return $partido;
+        }
+
         $contarGoles = fn (int $equipoId): int => Incidencia::query()
             ->where('partido_id', $partido->id)
             ->where('tipo', Incidencia::TIPO_GOL)

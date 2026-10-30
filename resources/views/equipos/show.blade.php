@@ -64,7 +64,7 @@
                                 <th>Nombre</th>
                                 <th>CI</th>
                                 <th>Edad</th>
-                                <th>Posición</th>
+                                
                                 <th>Estado</th>
                                 <th>Acciones</th>
                             </tr>
@@ -76,7 +76,6 @@
                                     <td>{{ $jugador->nombre }} {{ $jugador->apellido }}</td>
                                     <td>{{ $jugador->dni ?: '—' }}</td>
                                     <td>{{ $jugador->edad !== null ? $jugador->edad.' años' : '—' }}</td>
-                                    <td>{{ $jugador->posicion }}</td>
                                     <td><span class="badge bg-secondary text-capitalize">{{ $jugador->estado }}</span></td>
                                     <td>
                                         @if(auth()->user()->esDesarrollador() || (auth()->user()->rol === \App\Models\User::ROLE_DELEGADO && (int) $equipo->delegado_id === (int) auth()->id()))
@@ -110,7 +109,7 @@
                                 </tr>
                             @empty
                                 <tr>
-                                    <td colspan="7" class="text-center py-4 opacity-75">No hay jugadores registrados.</td>
+                                    <td colspan="6" class="text-center py-4 opacity-75">No hay jugadores registrados.</td>
                                 </tr>
                             @endforelse
                         </tbody>

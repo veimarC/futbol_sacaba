@@ -29,6 +29,8 @@
 
             <form method="POST" action="{{ route('campeonatos.store') }}" id="campeonato-wizard-form" enctype="multipart/form-data">
                 @csrf
+
+
                 <p class="required-note"><strong>*</strong> Campos obligatorios. Puedes completar los demás más adelante.</p>
                 <div id="wizard-error" class="alert alert-danger d-none" role="alert" aria-live="polite">
                     <i class="bi bi-exclamation-triangle-fill me-2"></i>
@@ -67,9 +69,10 @@
                             </div>
                         </div>
                         <div class="col-12">
-                            <label for="descripcion" class="form-label">Descripción</label>
-                            <textarea id="descripcion" name="descripcion" rows="3" class="form-control @error('descripcion') is-invalid @enderror">{{ old('descripcion') }}</textarea>
-                            @error('descripcion') <span class="invalid-feedback">{{ $message }}</span> @enderror
+                            <label for="reglamento_interno" class="form-label">Reglamentos internos <span class="fw-normal">(opcional)</span></label>
+                            <textarea id="reglamento_interno" name="reglamento_interno" rows="6" maxlength="10000" aria-describedby="reglamento-ayuda" class="form-control @error('reglamento_interno') is-invalid @enderror" placeholder="1. Puntualidad y tolerancia.&#10;2. Documentos requeridos.&#10;3. Sanciones y reclamos.">{{ old('reglamento_interno') }}</textarea>
+                            <div id="reglamento-ayuda" class="form-text">Escribe las normas propias del torneo. Se mostrarán en Reglamentos cuando el campeonato sea aprobado. Máximo 10 000 caracteres.</div>
+                            @error('reglamento_interno')<span class="invalid-feedback">{{ $message }}</span>@enderror
                         </div>
                         <div class="col-12">
                             <label for="portada" class="form-label">Imagen de portada <span class="opacity-75 fw-normal">(opcional)</span></label>
@@ -99,6 +102,7 @@
                             <div class="form-text text-white-75" id="format-description">Elige una opción para ver una explicación sencilla.</div>
                         </div>
                         <div class="col-12">
+                            @include('campeonatos.partials.opciones-formato')
                             <div class="p-3 rounded-3 form-panel">
                                 <h6 class="text-white">¿Qué formato necesitas?</h6>
                                 <p class="text-white-75 mb-0">Selecciona el tipo de torneo. Si no estás seguro, usa "Liga" para un campeonato simple.</p>
@@ -125,8 +129,8 @@
                                         <small class="opacity-75">La modalidad propone valores, pero puedes adaptarlos a tu reglamento.</small>
                                     </div>
                                 </div>
+                                <input id="jugadores_cancha" name="jugadores_cancha" type="hidden" value="{{ old('modalidad', 11) }}">
                                 <div class="row g-3">
-                                    {{-- La modalidad necesita más ancho para que "Fútbol 11" no se recorte. --}}
                                     <div class="col-md-4">
                                         <label for="modalidad" class="form-label">Modalidad *</label>
                                         <select id="modalidad" name="modalidad" class="form-select @error('modalidad') is-invalid @enderror" required>
@@ -136,23 +140,27 @@
                                         </select>
                                         @error('modalidad')<span class="invalid-feedback">{{ $message }}</span>@enderror
                                     </div>
-                                    <div class="col-md-2">
-                                        <label for="jugadores_cancha" class="form-label">En cancha *</label>
-                                        <input id="jugadores_cancha" name="jugadores_cancha" type="number" min="1" max="50" class="form-control @error('jugadores_cancha') is-invalid @enderror" required value="{{ old('jugadores_cancha', 11) }}">
-                                        @error('jugadores_cancha')<span class="invalid-feedback">{{ $message }}</span>@enderror
+                                    <div class="col-md-4">
+                                        <label for="min_jugadores_partido" class="form-label">Mínimo para jugar</label>
+                                        <input id="min_jugadores_partido" name="min_jugadores_partido" type="number" min="1" max="{{ old('modalidad', 11) }}" aria-describedby="plantilla-ayuda" class="form-control @error('min_jugadores_partido') is-invalid @enderror" value="{{ old('min_jugadores_partido') }}" placeholder="Sin indicar: {{ old('modalidad', 11) }} jugadores">
+                                        @error('min_jugadores_partido')<span class="invalid-feedback">{{ $message }}</span>@enderror
                                     </div>
-                                    <div class="col-md-3">
-                                        <label for="min_jugadores_equipo" class="form-label">Mínimo por equipo *</label>
-                                        <input id="min_jugadores_equipo" name="min_jugadores_equipo" type="number" min="1" max="100" class="form-control @error('min_jugadores_equipo') is-invalid @enderror" required value="{{ old('min_jugadores_equipo', 15) }}">
-                                        @error('min_jugadores_equipo')<span class="invalid-feedback">{{ $message }}</span>@enderror
-                                    </div>
-                                    <div class="col-md-3">
-                                        <label for="max_jugadores_equipo" class="form-label">Máximo por equipo *</label>
+                                    <div class="col-md-4">
+                                        <label for="max_jugadores_equipo" class="form-label">Máximo de inscritos *</label>
                                         <input id="max_jugadores_equipo" name="max_jugadores_equipo" type="number" min="1" max="100" class="form-control @error('max_jugadores_equipo') is-invalid @enderror" required value="{{ old('max_jugadores_equipo', 25) }}">
                                         @error('max_jugadores_equipo')<span class="invalid-feedback">{{ $message }}</span>@enderror
                                     </div>
                                 </div>
-                                <div class="form-text mt-2">El mínimo debe alcanzar para formar el equipo en cancha y el máximo nunca puede ser menor al mínimo.</div>
+                                <p id="plantilla-ayuda" class="small mt-3 mb-0">La plantilla incluye titulares y suplentes. El mínimo para jugar permite presentarse con menos jugadores; si lo dejas vacío, se exige la cantidad de la modalidad.</p>
+                                <details class="mt-3" @if($errors->has('min_jugadores_equipo')) open @endif>
+                                    <summary>Opciones avanzadas</summary>
+                                    <div class="mt-3">
+                                        <label for="min_jugadores_equipo" class="form-label">Mínimo de inscritos por equipo *</label>
+                                        <input id="min_jugadores_equipo" name="min_jugadores_equipo" type="number" min="{{ old('modalidad', 11) }}" max="100" required class="form-control @error('min_jugadores_equipo') is-invalid @enderror" value="{{ old('min_jugadores_equipo', old('modalidad', 11)) }}">
+                                        <div class="form-text">Por defecto coincide con la modalidad. Auméntalo si tu reglamento exige inscribir suplentes.</div>
+                                        @error('min_jugadores_equipo')<span class="invalid-feedback">{{ $message }}</span>@enderror
+                                    </div>
+                                </details>
                             </div>
                         </div>
 
@@ -208,7 +216,7 @@
                         <div class="col-12">
                             <div class="alert alert-info mb-0">
                                 <strong>Configuración automática según las inscripciones.</strong>
-                                Cuando apruebes los equipos y pulses «Generar fixture», la plataforma calculará las vueltas, los grupos, la distribución, los clasificados y la ronda inicial. No necesitas definir esos datos ahora.
+                                Al generar el fixture se calcularán los grupos, clasificados y llaves según los equipos aprobados, respetando las vueltas que elegiste.
                             </div>
                         </div>
                     </div>
@@ -227,6 +235,7 @@
                                 <li class="list-group-item bg-transparent text-white border-bottom">Nombre: <strong id="summary-nombre"></strong></li>
                                 <li class="list-group-item bg-transparent text-white border-bottom">Fechas: <strong id="summary-fechas"></strong></li>
                                 <li class="list-group-item bg-transparent text-white border-bottom">Formato: <strong id="summary-formato"></strong></li>
+                                <li class="list-group-item bg-transparent text-white border-bottom" data-format-summary></li>
                                 <li class="list-group-item bg-transparent text-white border-bottom">Plantilla: <strong id="summary-plantilla"></strong></li>
                                 <li class="list-group-item bg-transparent text-white border-bottom">Perfil: <strong id="summary-perfil"></strong></li>
                                 <li class="list-group-item bg-transparent text-white">Notas: <span class="text-white-75" id="summary-notas"></span></li>
@@ -238,7 +247,7 @@
                 <div class="d-flex justify-content-between align-items-center mt-4">
                     <button type="button" class="btn btn-borde" id="wizard-prev">Anterior</button>
                     <button type="button" class="btn btn-naranja" id="wizard-next">Siguiente</button>
-                    <button type="submit" class="btn btn-naranja d-none" id="wizard-submit">Guardar Campeonato</button>
+                    <button type="submit" class="btn btn-naranja d-none" id="wizard-submit">Guardar borrador</button>
                 </div>
             </form>
         </div>
@@ -317,14 +326,14 @@
         document.getElementById('summary-fechas').textContent = document.getElementById('fecha_inicio').value + ' - ' + (document.getElementById('fecha_fin').value || 'Sin definir');
         const formatoLabel = formatoSelect.options[formatoSelect.selectedIndex]?.text || 'No definido';
         document.getElementById('summary-formato').textContent = formatoLabel;
-        document.getElementById('summary-plantilla').textContent = `Fútbol ${modalidad.value}: ${jugadoresCancha.value} en cancha, mínimo ${minJugadores.value}, máximo ${maxJugadores.value}`;
+        document.getElementById('summary-plantilla').textContent = `Fútbol ${modalidad.value}; mínimo para jugar: ${document.getElementById('min_jugadores_partido').value || modalidad.value}; inscritos: ${minJugadores.value} a ${maxJugadores.value} por equipo`;
         const categoriaTexto = categoriaEdad.value === 'personalizada' ? categoriaPersonalizada.value : categoriaEdad.options[categoriaEdad.selectedIndex]?.text;
         document.getElementById('summary-perfil').textContent = `${categoriaTexto || 'Sin categoría'} · ${sexoSelect.options[sexoSelect.selectedIndex]?.text}`;
         const notas = [];
         if (selectedFormat() === 'grupos_eliminacion') {
             notas.push('Los grupos y clasificados se calcularán con los equipos aprobados.');
         } else if (selectedFormat() === 'liga') {
-            notas.push('Las vueltas se calcularán con los equipos aprobados.');
+            notas.push('El calendario respetará las vueltas elegidas.');
         } else if (selectedFormat() === 'eliminacion') {
             notas.push('Las llaves se calcularán con los equipos aprobados.');
         }
@@ -348,19 +357,23 @@
         const sugerencia = sugerenciasPlantilla[modalidad.value];
         if (!sugerencia) return;
         jugadoresCancha.value = sugerencia.cancha;
-        minJugadores.value = sugerencia.minimo;
+        minJugadores.value = sugerencia.cancha;
         maxJugadores.value = sugerencia.maximo;
         validarPlantilla();
     });
 
     function validarPlantilla() {
+        jugadoresCancha.value = modalidad.value;
+        const minimoPartido = document.getElementById('min_jugadores_partido');
+        minimoPartido.max = jugadoresCancha.value || 50;
+        minimoPartido.placeholder = `Sin indicar: ${jugadoresCancha.value || 11} jugadores`;
         minJugadores.min = jugadoresCancha.value || 1;
         maxJugadores.min = minJugadores.value || 1;
         minJugadores.setCustomValidity(Number(minJugadores.value) < Number(jugadoresCancha.value) ? 'El mínimo no puede ser menor que los jugadores en cancha.' : '');
         maxJugadores.setCustomValidity(Number(maxJugadores.value) < Number(minJugadores.value) ? 'El máximo debe ser mayor o igual al mínimo.' : '');
     }
 
-    [jugadoresCancha, minJugadores, maxJugadores].forEach(field => field?.addEventListener('input', validarPlantilla));
+    [jugadoresCancha, minJugadores, maxJugadores, document.getElementById('min_jugadores_partido')].forEach(field => field?.addEventListener('input', validarPlantilla));
 
     const edadesSugeridas = {
         sub_7:[null,6], sub_9:[null,8], sub_11:[null,10], sub_13:[null,12],
@@ -414,6 +427,8 @@
 
         currentStep = step;
         showStep(step);
+        const advanced = invalidField.closest('details');
+        if (advanced) advanced.open = true;
         invalidField.classList.add('is-invalid');
         showWizardError(invalidField.validationMessage || 'Completa correctamente el campo indicado.');
         setTimeout(() => {

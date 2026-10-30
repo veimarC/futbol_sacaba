@@ -23,7 +23,7 @@ class PartidoController extends Controller
     {
         $this->autorizarOrganizacion();
         $user = $request->user();
-        $campeonatos = Campeonato::noFinalizadosActuales()
+        $campeonatos = Campeonato::aprobados()->noFinalizadosActuales()
             ->when(! $user->esDesarrollador(), fn ($q) => $q->where('usuario_creador', $user->id))->latest()->get();
         $campeonatoSeleccionado = $request->query('campeonato');
         $equipos = collect();
@@ -32,10 +32,7 @@ class PartidoController extends Controller
             $this->autorizarCampeonato($campeonato);
             $equipos = $campeonato->equipos()->wherePivot('estado', 'aprobado')->orderBy('nombre')->get();
         }
-        $arbitros = isset($campeonato)
-            ? $campeonato->arbitros()->wherePivot('estado', 'aprobado')->orderBy('name')->get()
-            : collect();
-        return view('partidos.create', compact('campeonatos', 'campeonatoSeleccionado', 'equipos', 'arbitros'));
+        return view('partidos.create', compact('campeonatos', 'campeonatoSeleccionado', 'equipos'));
     }
 
     public function store(Request $request)
@@ -45,15 +42,13 @@ class PartidoController extends Controller
         $this->autorizarCampeonato($campeonato);
         if ($campeonato->formato === 'grupos_eliminacion' && $campeonato->fases()->where('tipo', 'grupo')->exists()) {
             return back()->withErrors([
-                'campeonato_id' => 'La Copa ya tiene su fixture por grupos. Edita los partidos generados para asignar fecha, cancha y árbitro.',
+                'campeonato_id' => 'La Copa ya tiene su fixture por grupos. Edita los partidos generados para asignar fecha y cancha.',
             ])->withInput();
         }
         if (! $this->equiposValidos($campeonato, $data)) return back()->withErrors(['campeonato_id' => 'Ambos equipos deben estar aprobados en el campeonato.'])->withInput();
-        if (! $this->arbitroValido($campeonato, $data)) return back()->withErrors(['arbitro_id' => 'Selecciona un árbitro aprobado en este campeonato.'])->withInput();
         $partido = Partido::create($this->datosPartido($data));
-        $this->notificarArbitro($partido, 'Nuevo partido asignado');
         $this->notificadorPartido->programacion($partido);
-        return redirect()->route('campeonatos.show', $campeonato)->with('mensaje', 'Partido programado.');
+        return redirect()->route('campeonatos.show', ['campeonato' => $campeonato, 'seccion' => 'partidos'])->with('mensaje', 'Partido programado.');
     }
 
     public function edit(Partido $partido)
@@ -61,21 +56,20 @@ class PartidoController extends Controller
         $this->autorizarCampeonato($partido->campeonato);
         abort_if($partido->estado !== 'programado', 422, 'Solo se editan partidos programados.');
         $user = auth()->user();
-        $campeonatos = Campeonato::noFinalizadosActuales()->when(! $user->esDesarrollador(), fn ($q) => $q->where('usuario_creador', $user->id))->get();
+        $campeonatos = Campeonato::aprobados()->noFinalizadosActuales()->when(! $user->esDesarrollador(), fn ($q) => $q->where('usuario_creador', $user->id))->get();
         $equipos = $partido->campeonato->equipos()->wherePivot('estado', 'aprobado')
             ->when($partido->fase?->tipo === 'grupo', fn ($consulta) => $consulta->whereIn(
                 'equipos.id',
                 data_get($partido->fase->metadata, 'teams', []),
             ))
             ->get();
-        $arbitros = $partido->campeonato->arbitros()->wherePivot('estado', 'aprobado')->orderBy('name')->get();
-        return view('partidos.edit', compact('partido', 'campeonatos', 'equipos', 'arbitros'));
+        return view('partidos.edit', compact('partido', 'campeonatos', 'equipos'));
     }
 
     public function update(Request $request, Partido $partido)
     {
         $this->autorizarCampeonato($partido->campeonato);
-        if ($partido->estado !== 'programado') return back()->withErrors(['error' => 'El partido ya no puede modificarse.']);
+        if ($partido->estado !== 'programado') return redirect()->route('partidos.nominas.index', $partido)->withErrors(['error' => 'El partido ya no puede modificarse.']);
         $data = $this->validar($request);
         $campeonato = Campeonato::findOrFail($data['campeonato_id']);
         $this->autorizarCampeonato($campeonato);
@@ -85,8 +79,14 @@ class PartidoController extends Controller
                 'equipo_visita_id' => 'En la fase de grupos solo puedes enfrentar equipos del mismo grupo.',
             ])->withInput();
         }
-        if (! $this->arbitroValido($campeonato, $data)) return back()->withErrors(['arbitro_id' => 'Selecciona un árbitro aprobado en este campeonato.'])->withInput();
-        $arbitroAnterior = $partido->arbitro_id;
+        $cambiaParticipacion = (int) $data['campeonato_id'] !== (int) $partido->campeonato_id
+            || (int) $data['equipo_local_id'] !== (int) $partido->equipo_local_id
+            || (int) $data['equipo_visita_id'] !== (int) $partido->equipo_visita_id;
+        if ($cambiaParticipacion && ($partido->fase_id || $partido->nominas()->exists() || $partido->incidencias()->exists())) {
+            return back()->withErrors([
+                'equipo_local_id' => 'No se pueden cambiar el campeonato ni los equipos de un partido con fase, nóminas o incidencias. Solo modifica su programación.',
+            ])->withInput();
+        }
         $partido->update($this->datosPartido($data));
         $programacionCambio = $partido->wasChanged([
             'equipo_local_id',
@@ -95,29 +95,26 @@ class PartidoController extends Controller
             'hora',
             'cancha',
         ]);
-        if ($partido->arbitro_id && ((int) $arbitroAnterior !== (int) $partido->arbitro_id || $partido->wasChanged(['fecha', 'hora', 'cancha']))) {
-            $this->notificarArbitro($partido, $arbitroAnterior ? 'Partido actualizado' : 'Nuevo partido asignado');
-        }
         if ($programacionCambio) {
             $partido->update(['whatsapp_recordatorio_enviado_at' => null]);
             $this->notificadorPartido->programacion($partido);
         }
-        return redirect()->route('campeonatos.show', $campeonato)->with('mensaje', 'Partido actualizado.');
+        return redirect()->route('campeonatos.show', ['campeonato' => $campeonato, 'seccion' => 'partidos'])->with('mensaje', 'Partido actualizado.');
     }
 
     public function destroy(Partido $partido)
     {
         $this->autorizarCampeonato($partido->campeonato);
-        if ($partido->estado !== 'programado') return back()->withErrors(['error' => 'No se puede eliminar un partido jugado.']);
+        if ($partido->estado !== 'programado') return redirect()->route('partidos.nominas.index', $partido)->withErrors(['error' => 'No se puede eliminar un partido jugado.']);
         $campeonato = $partido->campeonato;
         $partido->delete();
-        return redirect()->route('campeonatos.show', $campeonato)->with('mensaje', 'Partido eliminado.');
+        return redirect()->route('campeonatos.show', ['campeonato' => $campeonato, 'seccion' => 'partidos'])->with('mensaje', 'Partido eliminado.');
     }
 
     public function resultado(Partido $partido)
     {
         $this->autorizarResultado($partido);
-        if ($partido->estado !== 'programado') return back()->withErrors(['error' => 'El partido ya tiene resultado.']);
+        if ($partido->estado !== 'programado') return redirect()->route('partidos.nominas.index', $partido)->withErrors(['error' => 'El partido ya tiene resultado.']);
         $partido->load([
             'nominas' => fn ($query) => $query->where('estado', 'aprobada'),
             'nominas.jugadores.jugador',
@@ -135,18 +132,35 @@ class PartidoController extends Controller
             return $grupo;
         });
 
-        return view('partidos.resultado', compact('partido', 'jugadoresPorEquipo'));
+        $desempate = app(\App\Services\ResolucionEliminatoriaService::class)->contexto($partido);
+        return view('partidos.resultado', compact('partido', 'jugadoresPorEquipo', 'desempate'));
     }
 
     public function guardarResultado(Request $request, Partido $partido)
     {
         $this->autorizarResultado($partido);
-        if ($partido->estado !== 'programado') return back()->withErrors(['error' => 'El resultado ya fue registrado.']);
+        if ($partido->estado !== 'programado') return redirect()->route('partidos.nominas.index', $partido)->withErrors(['error' => 'El resultado ya fue registrado.']);
         if ($partido->nominas()->where('estado', 'aprobada')->count() !== 2) {
             return back()->withErrors(['error' => 'La Mesa de control debe aprobar las dos nóminas antes de registrar el resultado.']);
         }
-        $this->marcadorService->sincronizar($partido);
-        $partido->update(['estado' => 'jugado']);
+        $datos = $request->validate([
+            'penales_local' => ['nullable', 'integer', 'min:0', 'max:999'],
+            'penales_visita' => ['nullable', 'integer', 'min:0', 'max:999'],
+        ]);
+        \Illuminate\Support\Facades\DB::transaction(function () use ($partido, $datos) {
+            Campeonato::whereKey($partido->campeonato_id)->lockForUpdate()->firstOrFail();
+            $actual = Partido::whereKey($partido->id)->lockForUpdate()->firstOrFail();
+            abort_if($actual->estado !== 'programado', 409, 'El resultado ya fue registrado.');
+            if ($actual->nominas()->where('estado', 'aprobada')->count() !== 2) {
+                throw \Illuminate\Validation\ValidationException::withMessages(['error' => 'Aprueba las dos nominas antes de finalizar.']);
+            }
+            $this->marcadorService->sincronizar($actual);
+            $resolucion = app(\App\Services\ResolucionEliminatoriaService::class);
+            $penales = $resolucion->validar($actual, $datos);
+            $actual->update($penales + ['estado' => 'jugado']);
+            app(\App\Services\ClasificacionGruposService::class)->generar($actual->campeonato);
+            $resolucion->avanzar($actual);
+        });
         User::find($partido->campeonato->usuario_creador)?->notify(new NotificacionPlataforma(
             'Resultado registrado',
             "Se registró el resultado de {$partido->equipoLocal->nombre} vs {$partido->equipoVisita->nombre}.",
@@ -159,17 +173,18 @@ class PartidoController extends Controller
 
     public function equiposPorCampeonato(Campeonato $campeonato)
     {
+        abort_unless($campeonato->aprobacion_estado === 'aprobado', 403, 'El campeonato requiere aprobación.');
         return response()->json($campeonato->equipos()->wherePivot('estado', 'aprobado')->get(['equipos.id', 'equipos.nombre']));
     }
 
     private function validar(Request $request): array
     {
-        return $request->validate(['campeonato_id' => 'required|exists:campeonatos,id', 'equipo_local_id' => 'required|exists:equipos,id|different:equipo_visita_id', 'equipo_visita_id' => 'required|exists:equipos,id', 'fecha' => 'required|date', 'hora' => 'required', 'lugar' => 'required|string|max:255', 'arbitro_id' => 'nullable|exists:users,id']);
+        return $request->validate(['campeonato_id' => 'required|exists:campeonatos,id', 'equipo_local_id' => 'required|exists:equipos,id|different:equipo_visita_id', 'equipo_visita_id' => 'required|exists:equipos,id', 'fecha' => 'required|date', 'hora' => 'required|date_format:H:i', 'lugar' => 'required|string|max:255']);
     }
 
     private function datosPartido(array $data): array
     {
-        return ['campeonato_id' => $data['campeonato_id'], 'equipo_local_id' => $data['equipo_local_id'], 'equipo_visita_id' => $data['equipo_visita_id'], 'fecha' => $data['fecha'], 'hora' => $data['hora'], 'cancha' => $data['lugar'], 'arbitro_id' => $data['arbitro_id'] ?? null];
+        return ['campeonato_id' => $data['campeonato_id'], 'equipo_local_id' => $data['equipo_local_id'], 'equipo_visita_id' => $data['equipo_visita_id'], 'fecha' => $data['fecha'], 'hora' => $data['hora'], 'cancha' => $data['lugar']];
     }
 
     private function equiposValidos(Campeonato $campeonato, array $data): bool
@@ -188,16 +203,6 @@ class PartidoController extends Controller
             && $equiposGrupo->contains((int) $data['equipo_visita_id']);
     }
 
-    private function arbitroValido(Campeonato $campeonato, array $data): bool
-    {
-        if (empty($data['arbitro_id'])) return true;
-
-        return $campeonato->arbitros()
-            ->wherePivot('estado', 'aprobado')
-            ->where('users.id', $data['arbitro_id'])
-            ->exists();
-    }
-
     private function autorizarOrganizacion(): void
     {
         abort_unless(auth()->user()->hasRole([User::ROLE_ORGANIZADOR, User::ROLE_DESARROLLADOR]), 403);
@@ -205,6 +210,7 @@ class PartidoController extends Controller
 
     private function autorizarCampeonato(Campeonato $campeonato): void
     {
+        abort_unless($campeonato->aprobacion_estado === 'aprobado', 403, 'El campeonato requiere aprobación.');
         $user = auth()->user();
         abort_unless($user->esDesarrollador() || ($user->rol === User::ROLE_ORGANIZADOR && (int) $campeonato->usuario_creador === (int) $user->id), 403);
     }
@@ -213,21 +219,8 @@ class PartidoController extends Controller
     {
         $user = auth()->user();
         $permitido = $user->esDesarrollador()
-            || ($user->rol === User::ROLE_ORGANIZADOR && (int) $partido->campeonato->usuario_creador === (int) $user->id)
-            || ($user->rol === User::ROLE_ARBITRO && (int) $partido->arbitro_id === (int) $user->id);
+            || ($user->rol === User::ROLE_ORGANIZADOR && (int) $partido->campeonato->usuario_creador === (int) $user->id);
         abort_unless($permitido, 403);
     }
 
-    private function notificarArbitro(Partido $partido, string $titulo): void
-    {
-        if (! $partido->arbitro) return;
-        $fecha = $partido->fecha?->format('d/m/Y') ?? 'fecha por confirmar';
-        $partido->arbitro->notify(new NotificacionPlataforma(
-            $titulo,
-            "Dirigirás {$partido->equipoLocal->nombre} vs {$partido->equipoVisita->nombre} el {$fecha}.",
-            route('campeonatos.show', $partido->campeonato),
-            'bi-flag',
-            'info',
-        ));
-    }
 }

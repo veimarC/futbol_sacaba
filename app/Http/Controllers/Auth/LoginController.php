@@ -27,6 +27,29 @@ class LoginController extends Controller
      */
     protected $redirectTo = '/home';
 
+    protected function sendFailedLoginResponse(\Illuminate\Http\Request $request)
+    {
+        $existe = \App\Models\User::where('email', $request->input('email'))->exists();
+
+        throw \Illuminate\Validation\ValidationException::withMessages(
+            $existe
+                ? ['password' => 'La contraseña es incorrecta. Inténtalo nuevamente.']
+                : ['email' => 'No existe una cuenta con este correo. Revisa el correo o regístrate.']
+        );
+    }
+
+    protected function validateLogin(\Illuminate\Http\Request $request)
+    {
+        $request->validate([
+            'email' => ['required', 'string', 'email'],
+            'password' => ['required', 'string'],
+        ], [
+            'email.required' => 'Ingresa tu correo electrónico.',
+            'email.email' => 'Escribe un correo válido, por ejemplo: nombre@correo.com.',
+            'password.required' => 'Ingresa tu contraseña.',
+        ]);
+    }
+
     /**
      * Create a new controller instance.
      *

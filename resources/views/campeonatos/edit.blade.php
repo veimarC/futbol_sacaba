@@ -6,33 +6,44 @@
 
 @section('content')
 <div class="row justify-content-center">
-    <div class="col-md-6">
+    <div class="col-lg-10 col-xl-8">
         <div class="contenedor-transparente animar-aparecer">
-            <h2 class="fw-bold mb-4"><i class="bi bi-pencil-square me-2 text-accent"></i>Editar Campeonato</h2>
+            <h2 class="fw-bold mb-4"><i class="bi bi-pencil-square me-2 text-accent"></i>{{ $soloDatosInformativos ? 'Editar datos del campeonato' : 'Editar Campeonato' }}</h2>
             <form method="POST" action="{{ route('campeonatos.update', $campeonato) }}" enctype="multipart/form-data">
-                @csrf @method('PUT')
+                @csrf
+                @method('PUT')
                 <p class="required-note"><span aria-hidden="true">*</span> Los campos marcados con asterisco son obligatorios.</p>
+                @if($soloDatosInformativos)
+                    <div class="alert alert-info">Puedes actualizar los datos del campeonato, la fecha de fin y el mínimo de jugadores para jugar.</div>
+                @endif
                 @php
                     $categoriaEsPersonalizada = !array_key_exists($campeonato->categoria_edad, \App\Models\Campeonato::$categoriasEdad);
                 @endphp
 
                 <div class="row g-3">
-                    <div class="col-md-6">
+                    <div class="col-12">
                         <label class="form-label">Nombre *</label>
                         <input type="text" name="nombre" class="form-control @error('nombre') is-invalid @enderror" value="{{ old('nombre', $campeonato->nombre) }}" required>
                         @error('nombre')<span class="invalid-feedback">{{ $message }}</span>@enderror
                     </div>
-                    <div class="col-md-3">
+                    <div class="col-md-6">
+                        @if($soloDatosInformativos)
+                        <label for="fecha_inicio_aprobada" class="form-label">Fecha de inicio</label>
+                        <input type="text" id="fecha_inicio_aprobada" class="form-control" value="{{ $campeonato->fecha_inicio->format('d/m/Y') }}" readonly>
+                        <div class="form-text">Fecha de inicio aprobada.</div>
+                        @else
                         <label class="form-label">Fecha Inicio *</label>
                         <input type="date" id="fecha_inicio" name="fecha_inicio" class="form-control @error('fecha_inicio') is-invalid @enderror" value="{{ old('fecha_inicio', optional($campeonato->fecha_inicio)->format('Y-m-d')) }}" required>
                         @error('fecha_inicio')<span class="invalid-feedback">{{ $message }}</span>@enderror
+                        @endif
                     </div>
-                    <div class="col-md-3">
-                        <label class="form-label">Fecha Fin</label>
+                    <div class="col-md-6">
+                        <label for="fecha_fin" class="form-label">Fecha de fin</label>
                         <input type="date" id="fecha_fin" name="fecha_fin" class="form-control @error('fecha_fin') is-invalid @enderror" value="{{ old('fecha_fin', optional($campeonato->fecha_fin)->format('Y-m-d')) }}">
                         @error('fecha_fin')<span class="invalid-feedback">{{ $message }}</span>@enderror
-                        <div class="form-text">Debe ser posterior a la fecha de inicio.</div>
+                        <div class="form-text">{{ $soloDatosInformativos ? 'Debe ser posterior al inicio y cubrir las fechas de los partidos.' : 'Debe ser posterior a la fecha de inicio.' }} Déjala vacía si aún no está definida.</div>
                     </div>
+                    @unless($soloDatosInformativos)
                     <div class="col-md-6">
                         <label class="form-label">Límite de inscripción</label>
                         <input type="date" id="fecha_limite_inscripcion" name="fecha_limite_inscripcion" class="form-control @error('fecha_limite_inscripcion') is-invalid @enderror" value="{{ old('fecha_limite_inscripcion', optional($campeonato->fecha_limite_inscripcion)->format('Y-m-d')) }}">
@@ -42,6 +53,13 @@
                     <div class="col-md-6 d-flex align-items-end pb-2">
                         <div class="form-check form-switch"><input class="form-check-input" type="checkbox" name="inscripciones_abiertas" value="1" id="inscripciones_abiertas" {{ old('inscripciones_abiertas', $campeonato->inscripciones_abiertas) ? 'checked' : '' }}><label class="form-check-label" for="inscripciones_abiertas">Inscripciones abiertas</label></div>
                     </div>
+                    @endunless
+                    <div class="col-md-6">
+                        <label for="min_jugadores_partido" class="form-label">Mínimo de jugadores para jugar</label>
+                        <input id="min_jugadores_partido" name="min_jugadores_partido" type="number" min="1" max="{{ $soloDatosInformativos ? $campeonato->jugadores_cancha : 50 }}" class="form-control @error('min_jugadores_partido') is-invalid @enderror" value="{{ old('min_jugadores_partido', $campeonato->minimo_para_jugar) }}">
+                        <div class="form-text">Jugadores habilitados necesarios en la nómina.</div>
+                        @error('min_jugadores_partido')<span class="invalid-feedback">{{ $message }}</span>@enderror
+                    </div>
                 </div>
 
                 <div class="row g-3 mt-2">
@@ -49,6 +67,12 @@
                         <label for="descripcion" class="form-label">Descripción</label>
                         <textarea id="descripcion" name="descripcion" rows="3" class="form-control @error('descripcion') is-invalid @enderror">{{ old('descripcion', $campeonato->descripcion) }}</textarea>
                         @error('descripcion')<span class="invalid-feedback">{{ $message }}</span>@enderror
+                    </div>
+                    <div class="col-12">
+                        <label for="reglamento_interno" class="form-label">Reglamentos internos <span class="fw-normal">(opcional)</span></label>
+                        <textarea id="reglamento_interno" name="reglamento_interno" rows="6" maxlength="10000" aria-describedby="reglamento-ayuda" class="form-control @error('reglamento_interno') is-invalid @enderror">{{ old('reglamento_interno', $campeonato->reglamento_interno) }}</textarea>
+                        <div id="reglamento-ayuda" class="form-text">Normas propias del torneo que se muestran en Reglamentos. Máximo 10 000 caracteres.</div>
+                        @error('reglamento_interno')<span class="invalid-feedback">{{ $message }}</span>@enderror
                     </div>
                     <div class="col-12">
                         <label for="portada" class="form-label">Imagen de portada <span class="opacity-75 fw-normal">(opcional)</span></label>
@@ -69,6 +93,7 @@
                     </div>
                 </div>
 
+                @unless($soloDatosInformativos)
                 <div class="mt-4 p-3 rounded-3 form-panel-accent">
                     <h6 class="mb-1"><i class="bi bi-people-fill text-warning me-2"></i>Reglas de jugadores por equipo</h6>
                     <p class="small opacity-75 mb-3">La modalidad propone valores. Puedes cambiarlos según el reglamento del campeonato.</p>
@@ -160,9 +185,11 @@
                     </div>
                 </div>
 
+                @include('campeonatos.partials.opciones-formato')
                 <div class="alert alert-info mt-4 mb-0">
-                    <strong>Configuración automática:</strong> al generar el fixture, la plataforma usará la cantidad real de equipos aprobados para calcular vueltas, grupos, clasificados y llaves.
+                    <strong>Configuración automática:</strong> se calcularán grupos, clasificados y llaves con los equipos aprobados, respetando las vueltas elegidas.
                 </div>
+                @endunless
 
                 <div class="d-flex gap-3 mt-4">
                     <button type="submit" class="btn btn-naranja">Guardar Cambios</button>
@@ -170,6 +197,7 @@
                 </div>
             </form>
 
+            @unless($soloDatosInformativos)
             @if(auth()->check() && (auth()->user()->rol === \App\Models\User::ROLE_DESARROLLADOR || (auth()->user()->rol === \App\Models\User::ROLE_ORGANIZADOR && $campeonato->usuario_creador == auth()->id())))
             <script>
                 const formatoSelect = document.getElementById('formato');
@@ -239,6 +267,7 @@
                 validarPlantilla();
                 actualizarPerfil(false);
             </script>
+            @endunless
         </div>
     </div>
 </div>

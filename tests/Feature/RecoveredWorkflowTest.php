@@ -10,14 +10,12 @@ use App\Models\Jugador;
 use App\Models\Partido;
 use App\Models\User;
 use App\Notifications\NotificacionPlataforma;
-use App\Services\CloudinaryImageService;
 use Database\Seeders\DelegadosEquiposSeeder;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Storage;
-use Mockery;
 use Tests\TestCase;
 
 class RecoveredWorkflowTest extends TestCase
@@ -76,7 +74,7 @@ class RecoveredWorkflowTest extends TestCase
 
         $campeonato = Campeonato::where('nombre', 'Copa Sacaba')->firstOrFail();
         $this->assertSame('pendiente', $campeonato->estado);
-        $this->assertSame([], $campeonato->formato_config);
+        $this->assertSame(['eliminations_home_away' => false, 'third_place_match' => false, 'group_rounds' => 1], $campeonato->formato_config);
     }
 
     public function test_championship_roster_rules_are_validated_clearly(): void
@@ -351,7 +349,7 @@ class RecoveredWorkflowTest extends TestCase
     {
         $organizador = $this->user(User::ROLE_ORGANIZADOR);
         $delegado = $this->user(User::ROLE_DELEGADO);
-        $arbitro = $this->user(User::ROLE_ARBITRO);
+        $arbitro = $this->user('arbitro');
         $administradorGeneral = $this->user(User::ROLE_DESARROLLADOR);
 
         $this->actingAs($organizador)->get(route('home'))
@@ -359,7 +357,7 @@ class RecoveredWorkflowTest extends TestCase
         $this->actingAs($delegado)->get(route('home'))
             ->assertRedirect(route('campeonatos.index'));
         $this->actingAs($arbitro)->get(route('home'))
-            ->assertRedirect(route('arbitros.panel'));
+            ->assertRedirect(route('publico.index'));
         $this->actingAs($administradorGeneral)->get(route('home'))
             ->assertRedirect(route('campeonatos.index'));
     }
@@ -586,7 +584,7 @@ class RecoveredWorkflowTest extends TestCase
             ->assertOk()
             ->assertDontSee('name="estado"', false)
             ->assertDontSee('name="formato_config[', false)
-            ->assertSee('No necesitas definir esos datos ahora.');
+            ->assertSee('respetando las vueltas que elegiste.');
     }
 
     public function test_fixture_calculates_group_configuration_from_approved_teams(): void
@@ -650,7 +648,9 @@ class RecoveredWorkflowTest extends TestCase
             ->assertSee('Goleadores')
             ->assertSee('Tarjetas')
             ->assertDontSee('data-bs-target="#jug"', false)
-            ->assertSee('Partidos entre los equipos de este grupo.')
+            ->assertSee('Agenda de partidos')
+            ->assertSee('Por programar')
+            ->assertSee('agenda-match', false)
             ->assertDontSee('Programar Partido')
             ->assertViewHas('tablasGrupos', function ($grupos) {
                 return $grupos->count() === 4
@@ -662,7 +662,7 @@ class RecoveredWorkflowTest extends TestCase
     {
         $organizador = $this->user(User::ROLE_ORGANIZADOR);
         $campeonato = $this->championship($organizador);
-        $campeonato->update(['formato' => 'grupos_eliminacion', 'formato_config' => []]);
+        $campeonato->update(['formato' => 'grupos_eliminacion', 'formato_config' => ['eliminations_home_away' => true, 'third_place_match' => true]]);
 
         foreach (range(1, 20) as $numero) {
             $equipo = Equipo::create([
@@ -679,8 +679,8 @@ class RecoveredWorkflowTest extends TestCase
         $this->actingAs($organizador)
             ->patch(route('campeonatos.actualizarClasificados', $campeonato), [
                 'clasificados_por_grupo' => 4,
-                'ida_vuelta_eliminatorias' => 1,
-                'partido_tercer_lugar' => 1,
+                'ida_vuelta_eliminatorias' => 0,
+                'partido_tercer_lugar' => 0,
             ])
             ->assertSessionHasNoErrors();
 
@@ -800,17 +800,69 @@ class RecoveredWorkflowTest extends TestCase
         $this->assertDatabaseMissing('campeonatos', ['nombre' => 'Copa sin series']);
     }
 
-    public function test_unassigned_referee_cannot_enter_result(): void
+    public function test_finished_match_result_redirect_does_not_loop_to_same_page(): void
+    {
+        $owner = $this->user(User::ROLE_ORGANIZADOR);
+        $cup = $this->championship($owner);
+        $delegate = $this->user(User::ROLE_DELEGADO);
+        $local = Equipo::create(['nombre' => 'Local terminado', 'delegado_id' => $delegate->id]);
+        $away = Equipo::create(['nombre' => 'Visita terminada', 'delegado_id' => $delegate->id]);
+        $match = Partido::create(['campeonato_id' => $cup->id, 'equipo_local_id' => $local->id,
+            'equipo_visita_id' => $away->id, 'fecha' => now(), 'estado' => 'jugado']);
+        $resultUrl = route('partidos.resultado', $match);
+        $destination = route('partidos.nominas.index', $match);
+        $this->actingAs($owner)->from($resultUrl)->get($resultUrl)
+            ->assertRedirect($destination)->assertSessionHasErrors('error');
+        $this->get($destination)->assertOk();
+        $this->from($resultUrl)->put(route('partidos.guardarResultado', $match))
+            ->assertRedirect($destination)->assertSessionHasErrors('error');
+        $this->get($destination)->assertOk();
+    }
+
+    public function test_retired_referees_cannot_enter_results(): void
     {
         $organizador = $this->user(User::ROLE_ORGANIZADOR);
-        $asignado = $this->user(User::ROLE_ARBITRO);
-        $otro = $this->user(User::ROLE_ARBITRO);
+        $asignado = $this->user('arbitro');
+        $otro = $this->user('arbitro');
         $campeonato = $this->championship($organizador);
         $local = Equipo::create(['nombre' => 'Local', 'delegado_id' => $this->user(User::ROLE_DELEGADO)->id]);
         $visita = Equipo::create(['nombre' => 'Visita', 'delegado_id' => $this->user(User::ROLE_DELEGADO)->id]);
-        $partido = Partido::create(['campeonato_id' => $campeonato->id, 'equipo_local_id' => $local->id, 'equipo_visita_id' => $visita->id, 'arbitro_id' => $asignado->id, 'estado' => 'programado']);
+        $partido = Partido::forceCreate(['campeonato_id' => $campeonato->id, 'equipo_local_id' => $local->id, 'equipo_visita_id' => $visita->id, 'estado' => 'programado']);
         $this->actingAs($otro)->get(route('partidos.resultado', $partido))->assertForbidden();
-        $this->actingAs($asignado)->get(route('partidos.resultado', $partido))->assertOk();
+        $this->actingAs($asignado)->get(route('partidos.resultado', $partido))->assertForbidden();
+        $this->actingAs($organizador)->get(route('partidos.resultado', $partido))->assertOk();
+    }
+
+    public function test_roster_uses_championship_minimum_instead_of_full_side_size(): void
+    {
+        $owner = $this->user(User::ROLE_ORGANIZADOR);
+        $delegate = $this->user(User::ROLE_DELEGADO);
+        $cup = $this->championship($owner);
+        $cup->update(['jugadores_cancha' => 11, 'min_jugadores_partido' => 7]);
+        $local = Equipo::create(['nombre' => 'Local minimo', 'delegado_id' => $delegate->id]);
+        $away = Equipo::create(['nombre' => 'Visita minimo', 'delegado_id' => $delegate->id]);
+        $match = Partido::create(['campeonato_id' => $cup->id, 'equipo_local_id' => $local->id,
+            'equipo_visita_id' => $away->id, 'fecha' => now()->addDay(), 'estado' => 'programado']);
+        $numbers = [];
+        foreach (range(1, 7) as $number) {
+            $player = Jugador::create(['nombre' => 'Jugador '.$number, 'equipo_id' => $local->id, 'estado' => Jugador::ESTADO_APROBADO]);
+            $numbers[$player->id] = $number;
+        }
+        $this->actingAs($owner)->put(route('partidos.nominas.guardar', [$match, $local]),
+            ['dorsales' => array_slice($numbers, 0, 6, true)])->assertSessionHasErrors('dorsales');
+        $this->put(route('partidos.nominas.guardar', [$match, $local]), ['dorsales' => $numbers])
+            ->assertSessionHasNoErrors();
+        $roster = $match->nominas()->firstOrFail();
+        $this->assertSame('aprobada', $roster->estado);
+        $this->assertSame(7, $roster->jugadores()->count());
+        $roster->update(['estado' => 'pendiente']);
+        $this->post(route('partidos.nominas.gestionar', [$match, $roster]), ['estado' => 'aprobada'])
+            ->assertSessionHasNoErrors();
+        $cup->update(['min_jugadores_partido' => 8]);
+        $this->post(route('partidos.nominas.gestionar', [$match, $roster]), ['estado' => 'aprobada'])
+            ->assertSessionHasErrors('error');
+        $cup->update(['min_jugadores_partido' => null]);
+        $this->assertSame(11, $cup->fresh()->minimo_para_jugar);
     }
 
     public function test_match_rosters_use_per_match_numbers_and_block_a_red_card_suspension(): void
@@ -861,7 +913,11 @@ class RecoveredWorkflowTest extends TestCase
         $this->actingAs($organizador)->get(route('campeonatos.show', $campeonato))
             ->assertOk()->assertDontSee(route('partidos.resultado', $partido));
         $this->actingAs($organizador)->get(route('partidos.nominas.index', $partido))
-            ->assertOk()->assertSee('Registrar resultado')->assertSee(route('partidos.resultado', $partido));
+            ->assertOk()->assertSee('Planilla del partido')->assertSee('Revisar y finalizar')
+            ->assertSee(route('partidos.guardarResultado', $partido))
+            ->assertSee('data-sheet-event', false);
+        $this->actingAs($delegadoLocal)->get(route('partidos.nominas.index', $partido))
+            ->assertOk()->assertDontSee('data-sheet-event', false)->assertDontSee('Revisar y finalizar');
         $this->actingAs($organizador)->get(route('partidos.resultado', $partido))
             ->assertOk()
             ->assertSee('Local nómina · Local')
@@ -989,95 +1045,104 @@ class RecoveredWorkflowTest extends TestCase
         ])->assertSessionHasErrors('dorsales');
     }
 
-    public function test_referee_can_explore_and_apply_only_once_to_a_championship(): void
+    public function test_retiring_referee_accounts_preserves_history_and_can_be_reversed(): void
     {
+        $cleanup = require database_path('migrations/2026_09_27_010000_remove_retired_referee_schema.php');
+        $cleanup->down();
+        $migration = require database_path('migrations/2026_09_24_000000_retire_referee_role.php');
+        $migration->down();
+        $arbitro = $this->user('arbitro');
         $organizador = $this->user(User::ROLE_ORGANIZADOR);
-        $arbitro = $this->user(User::ROLE_ARBITRO);
         $campeonato = $this->championship($organizador);
-        $campeonato->update(['nombre' => 'Copa para árbitros']);
+        $local = Equipo::create(['nombre' => 'Local historico', 'delegado_id' => $this->user(User::ROLE_DELEGADO)->id]);
+        $visita = Equipo::create(['nombre' => 'Visita historica', 'delegado_id' => $this->user(User::ROLE_DELEGADO)->id]);
+        $partido = Partido::forceCreate([
+            'campeonato_id' => $campeonato->id,
+            'equipo_local_id' => $local->id,
+            'equipo_visita_id' => $visita->id,
+            'arbitro_id' => $arbitro->id,
+            'estado' => 'jugado',
+        ]);
+        $migration->up();
+        $this->assertSame(User::ROLE_PUBLICO, $arbitro->fresh()->rol);
+        $this->assertSame(User::ROLE_ORGANIZADOR, $organizador->fresh()->rol);
+        $this->assertSame($arbitro->id, (int) $partido->fresh()->arbitro_id);
+        $this->actingAs($arbitro->fresh())->get(route('home'))->assertRedirect(route('publico.index'));
+        $this->get(route('partidos.nominas.index', $partido))->assertForbidden();
+        $migration->down();
+        $this->assertSame('arbitro', $arbitro->fresh()->rol);
+        $migration->up();
 
-        $this->actingAs($arbitro)->get(route('arbitros.explorar', ['buscar' => 'árbitros']))
-            ->assertOk()->assertSee('Copa para árbitros')->assertSee('Ver y postularme');
-
-        $this->actingAs($arbitro)->post(route('arbitros.solicitar', $campeonato), [
-            'mensaje' => 'Disponible los sábados y domingos.',
-        ])->assertRedirect(route('arbitros.panel'));
-
-        $this->assertDatabaseHas('arbitro_campeonato', [
+        $partido->update(['goles_local' => 2, 'goles_visita' => 1]);
+        \Illuminate\Support\Facades\DB::table('arbitro_campeonato')->insert([
             'campeonato_id' => $campeonato->id,
             'arbitro_id' => $arbitro->id,
-            'estado' => 'pendiente',
+            'estado' => 'aprobado',
         ]);
-        $this->assertSame('Nueva postulación de árbitro', $organizador->fresh()->unreadNotifications()->first()->data['titulo']);
-
-        $this->actingAs($arbitro)->post(route('arbitros.solicitar', $campeonato))
-            ->assertSessionHasErrors('error');
-        $this->assertSame(1, \DB::table('arbitro_campeonato')->where('campeonato_id', $campeonato->id)->where('arbitro_id', $arbitro->id)->count());
+        $usersBefore = User::count();
+        $matchesBefore = Partido::count();
+        $cleanup->up();
+        $this->assertFalse(\Illuminate\Support\Facades\Schema::hasTable('arbitro_campeonato'));
+        $this->assertFalse(\Illuminate\Support\Facades\Schema::hasTable('retired_referee_accounts'));
+        $this->assertFalse(\Illuminate\Support\Facades\Schema::hasColumn('partidos', 'arbitro_id'));
+        $this->assertSame($usersBefore, User::count());
+        $this->assertSame($matchesBefore, Partido::count());
+        $this->assertSame(User::ROLE_PUBLICO, $arbitro->fresh()->rol);
+        $this->assertDatabaseHas('partidos', [
+            'id' => $partido->id, 'estado' => 'jugado', 'goles_local' => 2, 'goles_visita' => 1,
+        ]);
     }
 
-    public function test_championship_owner_can_approve_referee_and_another_organizer_cannot(): void
+    public function test_referee_role_is_no_longer_available_in_registration_or_routes(): void
     {
+        $this->get(route('register'))->assertOk()->assertDontSee('value="arbitro"', false);
+        $this->post(route('register'), [
+            'name' => 'Rol retirado',
+            'email' => 'retirado@example.test',
+            'password' => 'password123',
+            'password_confirmation' => 'password123',
+            'rol' => 'arbitro',
+        ])->assertSessionHasErrors('rol');
+        $this->assertDatabaseMissing('users', ['email' => 'retirado@example.test']);
+
         $organizador = $this->user(User::ROLE_ORGANIZADOR);
-        $otro = $this->user(User::ROLE_ORGANIZADOR);
-        $arbitro = $this->user(User::ROLE_ARBITRO);
         $campeonato = $this->championship($organizador);
-        $campeonato->arbitros()->attach($arbitro->id, ['estado' => 'pendiente']);
-
-        $this->actingAs($otro)->post(route('campeonatos.arbitros.gestionar', [$campeonato, $arbitro]), [
-            'estado' => 'aprobado',
-        ])->assertForbidden();
-        $this->actingAs($otro)->get(route('campeonatos.arbitros.administrar', $campeonato))
-            ->assertForbidden();
-
         $this->actingAs($organizador)->get(route('campeonatos.show', $campeonato))
-            ->assertOk()->assertSee('Árbitros')->assertDontSee($arbitro->name);
-        $this->actingAs($organizador)->get(route('campeonatos.arbitros.administrar', $campeonato))
-            ->assertOk()->assertSee($arbitro->name)->assertSee('Aprobar');
-        $this->actingAs($organizador)->post(route('campeonatos.arbitros.gestionar', [$campeonato, $arbitro]), [
-            'estado' => 'aprobado',
-        ])->assertRedirect();
-
-        $this->assertDatabaseHas('arbitro_campeonato', [
-            'campeonato_id' => $campeonato->id, 'arbitro_id' => $arbitro->id, 'estado' => 'aprobado',
-        ]);
-        $this->assertSame('Postulación de árbitro aprobada', $arbitro->fresh()->unreadNotifications()->first()->data['titulo']);
+            ->assertOk()->assertDontSee('Árbitros')->assertDontSee('Mis arbitrajes');
+        $this->get('/arbitro/mis-arbitrajes')->assertNotFound();
+        $this->get('/campeonatos/'.$campeonato->id.'/arbitros')->assertNotFound();
+        $this->get('/api/arbitros-campeonato/'.$campeonato->id)->assertNotFound();
+        $this->post('/arbitro/campeonatos/'.$campeonato->id.'/postular')->assertNotFound();
     }
 
-    public function test_organizer_can_assign_only_an_approved_referee(): void
+    public function test_organizer_programs_matches_without_referee_assignment(): void
     {
         $organizador = $this->user(User::ROLE_ORGANIZADOR);
-        $arbitro = $this->user(User::ROLE_ARBITRO);
         $campeonato = $this->championship($organizador);
-        $local = Equipo::create(['nombre' => 'Local aprobado', 'delegado_id' => $this->user(User::ROLE_DELEGADO)->id]);
-        $visita = Equipo::create(['nombre' => 'Visita aprobada', 'delegado_id' => $this->user(User::ROLE_DELEGADO)->id]);
-        $campeonato->equipos()->attach($local->id, ['estado' => 'aprobado']);
-        $campeonato->equipos()->attach($visita->id, ['estado' => 'aprobado']);
+        $local = Equipo::create(['nombre' => 'Local sin arbitro', 'delegado_id' => $this->user(User::ROLE_DELEGADO)->id]);
+        $visita = Equipo::create(['nombre' => 'Visita sin arbitro', 'delegado_id' => $this->user(User::ROLE_DELEGADO)->id]);
+        $campeonato->equipos()->attach([$local->id => ['estado' => 'aprobado'], $visita->id => ['estado' => 'aprobado']]);
         $datos = [
-            'campeonato_id' => $campeonato->id, 'equipo_local_id' => $local->id,
-            'equipo_visita_id' => $visita->id, 'fecha' => now()->addMonth()->format('Y-m-d'),
-            'hora' => '15:00', 'lugar' => 'Cancha Municipal', 'arbitro_id' => $arbitro->id,
+            'campeonato_id' => $campeonato->id,
+            'equipo_local_id' => $local->id,
+            'equipo_visita_id' => $visita->id,
+            'fecha' => now()->addDay()->toDateString(),
+            'hora' => '15:00',
+            'lugar' => 'Cancha Municipal',
         ];
-
-        $this->actingAs($organizador)->post(route('partidos.store'), $datos)->assertSessionHasErrors('arbitro_id');
-        $this->assertDatabaseCount('partidos', 0);
-
-        $campeonato->arbitros()->attach($arbitro->id, ['estado' => 'aprobado']);
-        $this->actingAs($organizador)->post(route('partidos.store'), $datos)->assertSessionDoesntHaveErrors();
-        $this->assertDatabaseHas('partidos', ['campeonato_id' => $campeonato->id, 'arbitro_id' => $arbitro->id]);
-    }
-
-    public function test_referee_panel_shows_assigned_matches_and_result_action(): void
-    {
-        $organizador = $this->user(User::ROLE_ORGANIZADOR);
-        $arbitro = $this->user(User::ROLE_ARBITRO);
-        $campeonato = $this->championship($organizador);
-        $campeonato->arbitros()->attach($arbitro->id, ['estado' => 'aprobado']);
-        $local = Equipo::create(['nombre' => 'Aurora', 'delegado_id' => $this->user(User::ROLE_DELEGADO)->id]);
-        $visita = Equipo::create(['nombre' => 'Wilstermann', 'delegado_id' => $this->user(User::ROLE_DELEGADO)->id]);
-        Partido::create(['campeonato_id' => $campeonato->id, 'equipo_local_id' => $local->id, 'equipo_visita_id' => $visita->id, 'arbitro_id' => $arbitro->id, 'estado' => 'programado']);
-
-        $this->actingAs($arbitro)->get(route('arbitros.panel'))
-            ->assertOk()->assertSee('Aurora')->assertSee('Wilstermann')->assertSee('Registrar resultado');
+        $this->actingAs($organizador)->get(route('partidos.create', ['campeonato' => $campeonato->id]))
+            ->assertOk()->assertSee('name="hora"', false)->assertDontSee('name="arbitro_id"', false);
+        // Un cliente antiguo no puede reintroducir la asignacion retirada.
+        $this->post(route('partidos.store'), $datos + ['arbitro_id' => $organizador->id])
+            ->assertSessionHasNoErrors();
+        $partido = Partido::where('campeonato_id', $campeonato->id)->firstOrFail();
+        $this->assertArrayNotHasKey('arbitro_id', $partido->getAttributes());
+        $this->get(route('partidos.edit', $partido))
+            ->assertOk()->assertSee('name="hora"', false)->assertDontSee('name="arbitro_id"', false);
+        $this->get(route('partidos.nominas.index', $partido))->assertOk();
+        $this->get(route('partidos.resultado', $partido))->assertOk();
+        $this->actingAs($this->user(User::ROLE_ORGANIZADOR))
+            ->get(route('partidos.resultado', $partido))->assertForbidden();
     }
 
     public function test_guest_can_search_the_public_championship_feed_without_an_account(): void
@@ -1234,23 +1299,7 @@ class RecoveredWorkflowTest extends TestCase
 
     public function test_organizer_can_add_an_optional_championship_cover_image(): void
     {
-        $imagenes = Mockery::mock(CloudinaryImageService::class);
-        $imagenes->shouldReceive('subir')
-            ->once()
-            ->withArgs(fn (UploadedFile $archivo, string $carpeta) => $archivo->isValid() && $carpeta === 'campeonatos')
-            ->andReturn([
-                'public_id' => 'futbol-sacaba/campeonatos/portada-prueba',
-                'secure_url' => 'https://res.cloudinary.com/prueba/image/upload/portada-prueba.png',
-                'width' => 1280,
-                'height' => 720,
-                'bytes' => 100,
-                'format' => 'png',
-            ]);
-        $imagenes->shouldReceive('urlOptimizada')
-            ->twice()
-            ->with('futbol-sacaba/campeonatos/portada-prueba', 1280, 720)
-            ->andReturn('https://res.cloudinary.com/prueba/image/upload/portada-prueba.png');
-        $this->app->instance(CloudinaryImageService::class, $imagenes);
+        Storage::fake('public');
 
         $organizador = $this->user(User::ROLE_ORGANIZADOR);
         $pngMinimo = base64_decode('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVQIHWP4z8DwHwAFgAI/ScL+WQAAAABJRU5ErkJggg==');
@@ -1265,10 +1314,11 @@ class RecoveredWorkflowTest extends TestCase
         ])->assertSessionDoesntHaveErrors();
 
         $campeonato = Campeonato::where('nombre', 'Copa con portada')->firstOrFail();
-        $this->assertNull($campeonato->portada);
-        $this->assertSame('futbol-sacaba/campeonatos/portada-prueba', $campeonato->portada_cloudinary_id);
-        $this->get(route('publico.index'))->assertOk()->assertSee('https://res.cloudinary.com/prueba/image/upload/portada-prueba.png', false);
-        $this->get(route('publico.show', $campeonato))->assertOk()->assertSee('https://res.cloudinary.com/prueba/image/upload/portada-prueba.png', false);
+        $this->assertStringStartsWith('campeonatos/', $campeonato->portada);
+        Storage::disk('public')->assertExists($campeonato->portada);
+        $campeonato->forceFill(['aprobacion_estado' => 'aprobado'])->save();
+        $this->get(route('publico.index'))->assertOk()->assertSee($campeonato->portada_url, false);
+        $this->get(route('publico.show', $campeonato))->assertOk()->assertSee($campeonato->portada_url, false);
     }
 
     public function test_championship_cover_rejects_unsupported_files(): void
@@ -1459,7 +1509,7 @@ class RecoveredWorkflowTest extends TestCase
             'numero' => 99,
             'equipo_id' => $equipo->id,
         ])->assertRedirect(route('equipos.show', $equipo).'#jugadores')
-            ->assertSessionHas('success', 'Jugador registrado correctamente.');
+            ->assertSessionHas('success', 'Jugador registrado. Queda pendiente de aprobación del organizador antes de poder jugar.');
 
         $this->assertDatabaseHas('jugadores', [
             'nombre' => 'Nuevo integrante',
@@ -1619,70 +1669,44 @@ class RecoveredWorkflowTest extends TestCase
             ->assertSee('https://wa.me/59162345678', false);
     }
 
-    public function test_player_photo_is_uploaded_to_cloudinary_and_its_public_id_is_saved(): void
+    public function test_player_photo_is_stored_locally_and_its_path_is_saved(): void
     {
-        $imagenes = Mockery::mock(CloudinaryImageService::class);
-        $imagenes->shouldReceive('subir')
-            ->once()
-            ->withArgs(fn (UploadedFile $archivo, string $carpeta) => $archivo->isValid() && $carpeta === 'jugadores')
-            ->andReturn([
-                'public_id' => 'futbol-sacaba/jugadores/foto-prueba',
-                'secure_url' => 'https://res.cloudinary.com/prueba/image/upload/foto-prueba.png',
-                'width' => 400,
-                'height' => 400,
-                'bytes' => 100,
-                'format' => 'png',
-            ]);
-        $this->app->instance(CloudinaryImageService::class, $imagenes);
+        Storage::fake('public');
 
         $delegado = $this->user(User::ROLE_DELEGADO);
-        $equipo = Equipo::create(['nombre' => 'Equipo Cloudinary', 'delegado_id' => $delegado->id]);
+        $equipo = Equipo::create(['nombre' => 'Equipo local', 'delegado_id' => $delegado->id]);
         $pngMinimo = base64_decode('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVQIHWP4z8DwHwAFgAI/ScL+WQAAAABJRU5ErkJggg==');
 
         $this->actingAs($delegado)->post(route('jugadores.store'), [
-            'nombre' => 'Jugador Cloudinary',
+            'nombre' => 'Jugador local',
             'sexo' => 'masculino',
             'equipo_id' => $equipo->id,
             'foto' => UploadedFile::fake()->createWithContent('jugador.png', $pngMinimo),
         ])->assertSessionDoesntHaveErrors();
 
-        $this->assertDatabaseHas('jugadores', [
-            'nombre' => 'Jugador Cloudinary',
-            'foto' => null,
-            'foto_cloudinary_id' => 'futbol-sacaba/jugadores/foto-prueba',
-        ]);
+        $jugador = Jugador::where('nombre', 'Jugador local')->firstOrFail();
+        $this->assertStringStartsWith('jugadores/', $jugador->foto);
+        Storage::disk('public')->assertExists($jugador->foto);
+        $this->assertSame(asset('storage/'.$jugador->foto), $jugador->foto_url);
     }
 
-    public function test_team_crest_is_uploaded_to_cloudinary_and_its_public_id_is_saved(): void
+    public function test_team_crest_is_stored_locally_and_its_path_is_saved(): void
     {
-        $imagenes = Mockery::mock(CloudinaryImageService::class);
-        $imagenes->shouldReceive('subir')
-            ->once()
-            ->withArgs(fn (UploadedFile $archivo, string $carpeta) => $archivo->isValid() && $carpeta === 'escudos')
-            ->andReturn([
-                'public_id' => 'futbol-sacaba/escudos/escudo-prueba',
-                'secure_url' => 'https://res.cloudinary.com/prueba/image/upload/escudo-prueba.png',
-                'width' => 400,
-                'height' => 400,
-                'bytes' => 100,
-                'format' => 'png',
-            ]);
-        $this->app->instance(CloudinaryImageService::class, $imagenes);
+        Storage::fake('public');
 
         $delegado = $this->user(User::ROLE_DELEGADO);
         $pngMinimo = base64_decode('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVQIHWP4z8DwHwAFgAI/ScL+WQAAAABJRU5ErkJggg==');
 
         $this->actingAs($delegado)->post(route('equipos.store'), [
-            'nombre' => 'Equipo con escudo Cloudinary',
+            'nombre' => 'Equipo con escudo local',
             'ciudad' => 'Sacaba',
             'escudo' => UploadedFile::fake()->createWithContent('escudo.png', $pngMinimo),
         ])->assertSessionDoesntHaveErrors();
 
-        $this->assertDatabaseHas('equipos', [
-            'nombre' => 'Equipo con escudo Cloudinary',
-            'escudo' => null,
-            'escudo_cloudinary_id' => 'futbol-sacaba/escudos/escudo-prueba',
-        ]);
+        $equipo = Equipo::where('nombre', 'Equipo con escudo local')->firstOrFail();
+        $this->assertStringStartsWith('escudos/', $equipo->escudo);
+        Storage::disk('public')->assertExists($equipo->escudo);
+        $this->assertSame(asset('storage/'.$equipo->escudo), $equipo->escudo_url);
     }
 
     public function test_programming_a_match_notifies_players_with_a_number_and_opted_in_delegates(): void
@@ -1753,6 +1777,38 @@ class RecoveredWorkflowTest extends TestCase
             && $request['template']['components'][0]['parameters'][1]['text'] === 'Equipo local'
         );
         Http::assertSentCount(2);
+    }
+
+    public function test_match_whatsapp_is_deduplicated_by_phone_and_schedule(): void
+    {
+        config([
+            'services.whatsapp.enabled' => true,
+            'services.whatsapp.version' => 'v25.0',
+            'services.whatsapp.phone_number_id' => '123456789',
+            'services.whatsapp.access_token' => 'test-token',
+        ]);
+        Http::fake(['graph.facebook.com/*' => Http::response(['messages' => [['id' => 'wamid.unique']]])]);
+        $owner = $this->user(User::ROLE_ORGANIZADOR);
+        $delegate = $this->user(User::ROLE_DELEGADO);
+        $delegate->update(['whatsapp' => '71234567', 'whatsapp_opt_in_at' => now()]);
+        $local = Equipo::create(['nombre' => 'Local', 'delegado_id' => $delegate->id]);
+        $away = Equipo::create(['nombre' => 'Visita', 'delegado_id' => $delegate->id]);
+        foreach ([$local, $local, $away] as $team) {
+            Jugador::create(['nombre' => 'Telefono compartido', 'equipo_id' => $team->id,
+                'estado' => Jugador::ESTADO_APROBADO, 'whatsapp' => '71234567', 'whatsapp_opt_in_at' => now()]);
+        }
+        $match = Partido::create(['campeonato_id' => $this->championship($owner)->id,
+            'equipo_local_id' => $local->id, 'equipo_visita_id' => $away->id,
+            'fecha' => now()->addDays(3), 'hora' => '15:00', 'cancha' => 'Cancha A']);
+        $service = app(\App\Services\NotificadorWhatsAppPartido::class);
+        $this->assertSame(1, $service->programacion($match));
+        $this->assertSame(0, $service->programacion($match->fresh()));
+        $this->assertSame(0, $service->programacion($match->fresh(), true));
+        Http::assertSentCount(1);
+        $match->update(['hora' => '16:00']);
+        $this->assertSame(1, $service->programacion($match->fresh()));
+        Http::assertSentCount(2);
+        $this->assertDatabaseCount('match_whatsapp_deliveries', 2);
     }
 
     public function test_match_reminder_is_sent_once_during_the_last_24_hours(): void
@@ -1854,6 +1910,6 @@ class RecoveredWorkflowTest extends TestCase
 
     private function championship(User $owner): Campeonato
     {
-        return Campeonato::create(['nombre' => 'Torneo', 'fecha_inicio' => now()->addMonth(), 'estado' => 'pendiente', 'usuario_creador' => $owner->id, 'formato' => 'liga', 'inscripciones_abiertas' => true]);
+        return Campeonato::forceCreate(['aprobacion_estado' => 'aprobado', 'nombre' => 'Torneo', 'fecha_inicio' => now()->addMonth(), 'estado' => 'pendiente', 'usuario_creador' => $owner->id, 'formato' => 'liga', 'inscripciones_abiertas' => true]);
     }
 }

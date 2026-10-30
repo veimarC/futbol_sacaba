@@ -54,7 +54,7 @@ class ConfiguracionFormatoService
             'liga' => [
                 // Con torneos pequeños se juega ida y vuelta; con más equipos,
                 // una sola vuelta evita un calendario excesivamente largo.
-                'league_rounds' => $cantidadEquipos <= 10 ? 2 : 1,
+                'league_rounds' => (int) ($anterior['league_rounds'] ?? ($cantidadEquipos <= 10 ? 2 : 1)),
                 'calculated_for_teams' => $cantidadEquipos,
             ],
             'grupos_eliminacion' => $this->configuracionCopa($cantidadEquipos, $anterior),
@@ -87,6 +87,7 @@ class ConfiguracionFormatoService
 
         return [
             'number_of_groups' => $numeroGrupos,
+            'group_rounds' => (int) ($anterior['group_rounds'] ?? 1),
             'teams_per_group' => (int) ceil($cantidadEquipos / $numeroGrupos),
             'qualifiers_per_group' => $clasificadosPorGrupo,
             'elimination_start' => $inicioEliminatoria,

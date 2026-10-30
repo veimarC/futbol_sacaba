@@ -7,7 +7,7 @@ use App\Models\Equipo;
 use App\Models\Jugador;
 use App\Models\User;
 use App\Notifications\NotificacionPlataforma;
-use App\Services\CloudinaryImageService;
+use App\Services\LocalImageService;
 use Carbon\Carbon;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Log;
@@ -31,7 +31,7 @@ use Throwable;
  */
 class JugadorController extends Controller
 {
-    public function __construct(private CloudinaryImageService $imagenes) {}
+    public function __construct(private LocalImageService $imagenes) {}
 
     /**
      * Mostrar la ficha de un jugador.
@@ -144,7 +144,6 @@ class JugadorController extends Controller
             'whatsapp_notifications' => ['nullable', 'boolean'],
             'fecha_nacimiento' => 'nullable|date|before_or_equal:today',
             'sexo' => 'required|in:masculino,femenino',
-            'posicion' => 'nullable|string|max:100',
             'equipo_id' => 'required|exists:equipos,id',
             'foto' => 'nullable|image|mimes:jpg,jpeg,png|max:2048',
         ];
@@ -176,14 +175,13 @@ class JugadorController extends Controller
             }
         }
 
-        // La imagen se almacena en Cloudinary; la base conserva solo su public_id.
+        // La imagen se almacena en el disco público; la base conserva su ruta.
         if ($request->hasFile('foto')) {
             try {
                 $subida = $this->imagenes->subir($request->file('foto'), 'jugadores');
-                $data['foto_cloudinary_id'] = $subida['public_id'];
-                $data['foto'] = null;
+                $data['foto'] = $subida;
             } catch (Throwable $error) {
-                Log::warning('No se pudo subir la foto del jugador a Cloudinary.', [
+                Log::warning('No se pudo subir la foto del jugador en el almacenamiento local.', [
                     'error' => $error->getMessage(),
                 ]);
 
@@ -198,11 +196,14 @@ class JugadorController extends Controller
             : null;
         unset($data['whatsapp_notifications']);
 
+        // Toda alta requiere revisión, incluso si el equipo ya está aprobado.
+        $data['estado'] = Jugador::ESTADO_PENDIENTE;
+
         try {
             $jugador = Jugador::create($data);
         } catch (Throwable $error) {
-            if (! empty($data['foto_cloudinary_id'])) {
-                $this->eliminarImagenCloudinarySinInterrumpir($data['foto_cloudinary_id']);
+            if (! empty($data['foto'])) {
+                $this->eliminarImagenLocalSinInterrumpir($data['foto']);
             }
 
             throw $error;
@@ -222,7 +223,7 @@ class JugadorController extends Controller
         // Regresa a la plantilla del equipo para que el delegado vea de
         // inmediato al jugador recién registrado y pueda continuar agregando.
         return redirect()->to(route('equipos.show', $equipo).'#jugadores')
-            ->with('success', 'Jugador registrado correctamente.');
+            ->with('success', 'Jugador registrado. Queda pendiente de aprobación del organizador antes de poder jugar.');
     }
 
     /**
@@ -261,7 +262,6 @@ class JugadorController extends Controller
             'whatsapp_notifications' => ['nullable', 'boolean'],
             'fecha_nacimiento' => 'nullable|date|before_or_equal:today',
             'sexo' => 'required|in:masculino,femenino',
-            'posicion' => 'nullable|string|max:100',
             'equipo_id' => 'required|exists:equipos,id',
             'foto' => 'nullable|image|mimes:jpg,jpeg,png|max:2048',
         ];
@@ -296,19 +296,18 @@ class JugadorController extends Controller
             }
         }
 
-        $fotoCloudinaryAnterior = $jugador->foto_cloudinary_id;
+        unset($data['foto']);
         $fotoLocalAnterior = $jugador->foto;
-        $nuevaFotoCloudinary = null;
+        $nuevaFoto = null;
 
         // Primero se sube la nueva imagen; la anterior se borra solo tras guardar.
         if ($request->hasFile('foto')) {
             try {
                 $subida = $this->imagenes->subir($request->file('foto'), 'jugadores');
-                $nuevaFotoCloudinary = $subida['public_id'];
-                $data['foto_cloudinary_id'] = $nuevaFotoCloudinary;
-                $data['foto'] = null;
+                $nuevaFoto = $subida;
+                $data['foto'] = $nuevaFoto;
             } catch (Throwable $error) {
-                Log::warning('No se pudo reemplazar la foto del jugador en Cloudinary.', [
+                Log::warning('No se pudo reemplazar la foto del jugador en el almacenamiento local.', [
                     'jugador_id' => $jugador->id,
                     'error' => $error->getMessage(),
                 ]);
@@ -327,15 +326,14 @@ class JugadorController extends Controller
         try {
             $jugador->update($data);
         } catch (Throwable $error) {
-            if ($nuevaFotoCloudinary) {
-                $this->eliminarImagenCloudinarySinInterrumpir($nuevaFotoCloudinary);
+            if ($nuevaFoto) {
+                $this->eliminarImagenLocalSinInterrumpir($nuevaFoto);
             }
 
             throw $error;
         }
 
-        if ($nuevaFotoCloudinary) {
-            $this->eliminarImagenCloudinarySinInterrumpir($fotoCloudinaryAnterior);
+        if ($nuevaFoto) {
             if ($fotoLocalAnterior && Storage::disk('public')->exists($fotoLocalAnterior)) {
                 Storage::disk('public')->delete($fotoLocalAnterior);
             }
@@ -363,22 +361,8 @@ class JugadorController extends Controller
             ]);
         }
 
-        if ($jugador->foto_cloudinary_id) {
-            try {
-                $this->imagenes->eliminar($jugador->foto_cloudinary_id);
-            } catch (Throwable $error) {
-                Log::warning('No se pudo eliminar de Cloudinary la foto del jugador.', [
-                    'jugador_id' => $jugador->id,
-                    'error' => $error->getMessage(),
-                ]);
 
-                return back()->withErrors([
-                    'jugador' => 'No se pudo eliminar su foto de Cloudinary. Inténtalo nuevamente.',
-                ]);
-            }
-        }
-
-        // Compatibilidad con las fotografías guardadas antes de Cloudinary.
+        // Elimina la fotografía del almacenamiento local.
         if ($jugador->foto && Storage::disk('public')->exists($jugador->foto)) {
             Storage::disk('public')->delete($jugador->foto);
         }
@@ -388,17 +372,17 @@ class JugadorController extends Controller
         return back()->with('success', 'Jugador eliminado.');
     }
 
-    private function eliminarImagenCloudinarySinInterrumpir(?string $publicId): void
+    private function eliminarImagenLocalSinInterrumpir(?string $ruta): void
     {
-        if (! $publicId) {
+        if (! $ruta) {
             return;
         }
 
         try {
-            $this->imagenes->eliminar($publicId);
+            $this->imagenes->eliminar($ruta);
         } catch (Throwable $error) {
-            Log::warning('No se pudo limpiar una imagen reemplazada de Cloudinary.', [
-                'public_id' => $publicId,
+            Log::warning('No se pudo limpiar una imagen reemplazada del almacenamiento local.', [
+                'ruta' => $ruta,
                 'error' => $error->getMessage(),
             ]);
         }

@@ -101,12 +101,6 @@
                 </div>
 
                 <div class="mb-3">
-                    <label class="form-label">Posición</label>
-                    <input type="text" name="posicion" class="form-control @error('posicion') is-invalid @enderror" value="{{ old('posicion') }}" placeholder="Ej.: Delantero">
-                    @error('posicion') <div class="invalid-feedback">{{ $message }}</div> @enderror
-                </div>
-
-                <div class="mb-3">
                     <label class="form-label">Equipo</label>
                     @if($equipos->isEmpty())
                         <div class="alert alert-warning">No tienes equipos disponibles para registrar jugadores. Si eres administrador general, asegúrate de que existan equipos en el campeonato o crea equipos primero.</div>
@@ -128,7 +122,7 @@
                     <label class="form-label">Foto (opcional)</label>
                     <input type="file" name="foto" class="form-control @error('foto') is-invalid @enderror" accept="image/jpeg,image/png">
                     @error('foto') <div class="invalid-feedback">{{ $message }}</div> @enderror
-                    <div class="form-text">Se optimizará en Cloudinary. Si no subes foto, se usará un icono por defecto.</div>
+                    <div class="form-text">Si no subes foto, se usará un icono por defecto.</div>
                 </div>
 
                 <div class="d-grid">

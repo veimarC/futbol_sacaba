@@ -21,8 +21,6 @@ class DemoCampeonatoSeeder extends Seeder
     {
         DB::transaction(function () {
             $organizador = $this->usuario('Organizador DEMO', 'organizador.demo@futbol.test', User::ROLE_ORGANIZADOR);
-            $arbitro = $this->usuario('Árbitro DEMO Aprobado', 'arbitro.demo@futbol.test', User::ROLE_ARBITRO);
-            $arbitroPendiente = $this->usuario('Árbitro DEMO Pendiente', 'arbitro.pendiente@futbol.test', User::ROLE_ARBITRO);
 
             $delegados = collect(range(1, 8))->map(fn (int $numero) => $this->usuario(
                 "Delegado DEMO {$numero}",
@@ -130,24 +128,8 @@ class DemoCampeonatoSeeder extends Seeder
                 'aprobado',
             );
 
-            $copa->arbitros()->syncWithoutDetaching([
-                $arbitro->id => [
-                    'estado' => 'aprobado',
-                    'mensaje' => 'Disponible para dirigir los fines de semana.',
-                    'gestionado_por' => $organizador->id,
-                    'gestionado_at' => now(),
-                ],
-                $arbitroPendiente->id => [
-                    'estado' => 'pendiente',
-                    'mensaje' => 'Solicito participar en este campeonato.',
-                ],
-            ]);
-            $liga->arbitros()->syncWithoutDetaching([
-                $arbitro->id => ['estado' => 'aprobado', 'gestionado_por' => $organizador->id, 'gestionado_at' => now()],
-            ]);
-
-            $this->partidosCopa($copa, $equiposCopa, $arbitro);
-            $this->campeonatoFinalizado($finalizado, $equiposFinalizado, $arbitro);
+            $this->partidosCopa($copa, $equiposCopa, $organizador);
+            $this->campeonatoFinalizado($finalizado, $equiposFinalizado, $organizador);
         });
 
         $equiposDemo = Equipo::where('nombre', 'like', '%[DEMO]%');
@@ -194,7 +176,6 @@ class DemoCampeonatoSeeder extends Seeder
 
     private function jugadores(Equipo $equipo, int $equipoIndice, int $cantidad, bool $mixto): void
     {
-        $posiciones = ['Arquero', 'Defensa', 'Defensa', 'Mediocampista', 'Mediocampista', 'Delantero'];
 
         foreach (range(1, $cantidad) as $numero) {
             Jugador::updateOrCreate(
@@ -205,14 +186,13 @@ class DemoCampeonatoSeeder extends Seeder
                     'dni' => sprintf('DEMO-%02d-%02d', $equipoIndice + 1, $numero),
                     'fecha_nacimiento' => today()->subYears(20 + ($numero % 10)),
                     'sexo' => $mixto && $numero % 4 === 0 ? 'femenino' : 'masculino',
-                    'posicion' => $posiciones[($numero - 1) % count($posiciones)],
                     'estado' => Jugador::ESTADO_APROBADO,
                 ],
             );
         }
     }
 
-    private function partidosCopa(Campeonato $campeonato, array $equipos, User $arbitro): void
+    private function partidosCopa(Campeonato $campeonato, array $equipos, User $organizador): void
     {
         $partidos = [
             [0, 1, -7, 'jugado', 2, 1],
@@ -236,7 +216,6 @@ class DemoCampeonatoSeeder extends Seeder
                     'fecha' => today()->addDays($dias),
                     'hora' => $orden % 2 === 0 ? '15:00' : '17:00',
                     'cancha' => 'Estadio Municipal de Sacaba',
-                    'arbitro_id' => $arbitro->id,
                     'goles_local' => $golesLocal,
                     'goles_visita' => $golesVisita,
                     'estado' => $estado,
@@ -252,32 +231,32 @@ class DemoCampeonatoSeeder extends Seeder
             for ($gol = 1; $gol <= $golesLocal; $gol++) {
                 Incidencia::updateOrCreate(
                     ['partido_id' => $partido->id, 'jugador_id' => $goleadorLocal->id, 'tipo' => Incidencia::TIPO_GOL, 'minuto' => 15 * $gol],
-                    ['creado_por' => $arbitro->id],
+                    ['creado_por' => $organizador->id],
                 );
             }
             for ($gol = 1; $gol <= $golesVisita; $gol++) {
                 Incidencia::updateOrCreate(
                     ['partido_id' => $partido->id, 'jugador_id' => $goleadorVisita->id, 'tipo' => Incidencia::TIPO_GOL, 'minuto' => 20 * $gol],
-                    ['creado_por' => $arbitro->id],
+                    ['creado_por' => $organizador->id],
                 );
             }
 
             $amonestado = $equipos[$local]->jugadores()->orderBy('numero')->skip(1)->first();
             Incidencia::updateOrCreate(
                 ['partido_id' => $partido->id, 'jugador_id' => $amonestado->id, 'tipo' => Incidencia::TIPO_AMARILLA, 'minuto' => 42],
-                ['creado_por' => $arbitro->id],
+                ['creado_por' => $organizador->id],
             );
             if ($orden === 1) {
                 $expulsado = $equipos[$visita]->jugadores()->orderBy('numero')->skip(2)->first();
                 Incidencia::updateOrCreate(
                     ['partido_id' => $partido->id, 'jugador_id' => $expulsado->id, 'tipo' => Incidencia::TIPO_ROJA, 'minuto' => 76],
-                    ['creado_por' => $arbitro->id],
+                    ['creado_por' => $organizador->id],
                 );
             }
         }
     }
 
-    private function campeonatoFinalizado(Campeonato $campeonato, array $equipos, User $arbitro): void
+    private function campeonatoFinalizado(Campeonato $campeonato, array $equipos, User $organizador): void
     {
         Incidencia::whereIn('partido_id', $campeonato->partidos()->pluck('id'))->delete();
         $campeonato->partidos()->delete();
@@ -297,7 +276,7 @@ class DemoCampeonatoSeeder extends Seeder
             $cruces = [[0, 1], [2, 3], [0, 2], [1, 3], [0, 3], [1, 2]];
 
             foreach ($cruces as $orden => [$local, $visita]) {
-                $this->partidoDemo($campeonato, $fase, $equiposGrupo[$local], $equiposGrupo[$visita], $dia++, $arbitro, 1 + (($orden + $indice) % 3), $orden % 2, intdiv($orden, 2) + 1, ($orden % 2) + 1);
+                $this->partidoDemo($campeonato, $fase, $equiposGrupo[$local], $equiposGrupo[$visita], $dia++, $organizador, 1 + (($orden + $indice) % 3), $orden % 2, intdiv($orden, 2) + 1, ($orden % 2) + 1);
             }
         }
 
@@ -310,18 +289,18 @@ class DemoCampeonatoSeeder extends Seeder
         ]);
 
         // Semifinal 1: Barrio Norte supera a Los Pinos por 4-2 en el global.
-        $this->partidoDemo($campeonato, $eliminacion, $equipos[0], $equipos[5], -25, $arbitro, 2, 1, 1, 1);
-        $this->partidoDemo($campeonato, $eliminacion, $equipos[5], $equipos[0], -18, $arbitro, 1, 2, 1, 1);
+        $this->partidoDemo($campeonato, $eliminacion, $equipos[0], $equipos[5], -25, $organizador, 2, 1, 1, 1);
+        $this->partidoDemo($campeonato, $eliminacion, $equipos[5], $equipos[0], -18, $organizador, 1, 2, 1, 1);
         // Semifinal 2: Deportivo Sur supera a San Pedro por 3-2 en el global.
-        $this->partidoDemo($campeonato, $eliminacion, $equipos[4], $equipos[1], -24, $arbitro, 1, 1, 1, 2);
-        $this->partidoDemo($campeonato, $eliminacion, $equipos[1], $equipos[4], -17, $arbitro, 1, 2, 1, 2);
+        $this->partidoDemo($campeonato, $eliminacion, $equipos[4], $equipos[1], -24, $organizador, 1, 1, 1, 2);
+        $this->partidoDemo($campeonato, $eliminacion, $equipos[1], $equipos[4], -17, $organizador, 1, 2, 1, 2);
         // La final siempre se disputa a partido único.
-        $this->partidoDemo($campeonato, $eliminacion, $equipos[0], $equipos[4], -5, $arbitro, 3, 1, 2, 1);
+        $this->partidoDemo($campeonato, $eliminacion, $equipos[0], $equipos[4], -5, $organizador, 3, 1, 2, 1);
         // Los perdedores de semifinales disputan el tercer lugar a partido único.
-        $this->partidoDemo($campeonato, $eliminacion, $equipos[5], $equipos[1], -6, $arbitro, 2, 0, 2, 2);
+        $this->partidoDemo($campeonato, $eliminacion, $equipos[5], $equipos[1], -6, $organizador, 2, 0, 2, 2);
     }
 
-    private function partidoDemo(Campeonato $campeonato, Fase $fase, Equipo $local, Equipo $visita, int $dias, User $arbitro, int $golesLocal, int $golesVisita, int $ronda, int $orden): Partido
+    private function partidoDemo(Campeonato $campeonato, Fase $fase, Equipo $local, Equipo $visita, int $dias, User $organizador, int $golesLocal, int $golesVisita, int $ronda, int $orden): Partido
     {
         $partido = Partido::create([
             'campeonato_id' => $campeonato->id,
@@ -333,7 +312,6 @@ class DemoCampeonatoSeeder extends Seeder
             'fecha' => today()->addDays($dias),
             'hora' => $orden % 2 === 0 ? '17:00' : '15:00',
             'cancha' => 'Estadio Municipal de Sacaba',
-            'arbitro_id' => $arbitro->id,
             'goles_local' => $golesLocal,
             'goles_visita' => $golesVisita,
             'estado' => 'jugado',
@@ -348,7 +326,7 @@ class DemoCampeonatoSeeder extends Seeder
                 'jugador_id' => $goleadoresLocal[($gol - 1) % $goleadoresLocal->count()]->id,
                 'tipo' => Incidencia::TIPO_GOL,
                 'minuto' => min(89, 14 * $gol),
-                'creado_por' => $arbitro->id,
+                'creado_por' => $organizador->id,
             ]);
         }
         for ($gol = 1; $gol <= $golesVisita; $gol++) {
@@ -357,7 +335,7 @@ class DemoCampeonatoSeeder extends Seeder
                 'jugador_id' => $goleadoresVisita[($gol - 1) % $goleadoresVisita->count()]->id,
                 'tipo' => Incidencia::TIPO_GOL,
                 'minuto' => min(89, 18 * $gol),
-                'creado_por' => $arbitro->id,
+                'creado_por' => $organizador->id,
             ]);
         }
 

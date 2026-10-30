@@ -37,8 +37,6 @@
                 <dt class="col-sm-3">Edad actual</dt>
                 <dd class="col-sm-9">{{ $jugador->edad !== null ? $jugador->edad.' años' : 'No registrada' }}</dd>
 
-                <dt class="col-sm-3">Posición</dt>
-                <dd class="col-sm-9">{{ $jugador->posicion ?? '-' }}</dd>
 
                 <dt class="col-sm-3">Sexo</dt>
                 <dd class="col-sm-9">{{ $jugador->sexo ? ucfirst($jugador->sexo) : 'No registrado' }}</dd>

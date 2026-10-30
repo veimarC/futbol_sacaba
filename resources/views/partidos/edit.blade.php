@@ -1,6 +1,6 @@
 {{--
     Vista para editar partido.
-    Permite cambiar fecha, hora, cancha, árbitro y equipos antes de que el partido sea jugado.
+    Permite cambiar fecha, hora, cancha y equipos antes de que el partido sea jugado.
 --}}
 @extends('layouts.app')
 
@@ -63,18 +63,6 @@
                     </div>
                 </div>
 
-                <div class="mb-3">
-                    <label class="form-label">Árbitro (opcional)</label>
-                    <select name="arbitro_id" id="arbitro_id" class="form-select @error('arbitro_id') is-invalid @enderror">
-                        <option value="">Sin asignar</option>
-                        @foreach($arbitros as $a)
-                            <option value="{{ $a->id }}" {{ old('arbitro_id', $partido->arbitro_id) == $a->id ? 'selected' : '' }}>{{ $a->name }} ({{ $a->email }})</option>
-                        @endforeach
-                    </select>
-                    @error('arbitro_id')<div class="invalid-feedback">{{ $message }}</div>@enderror
-                    <div class="form-text">Puedes dejarlo sin asignar y elegir un árbitro después.</div>
-                </div>
-
                 <div class="mb-4">
                     <label class="form-label">Lugar / Cancha *</label>
                     <input type="text" name="lugar" class="form-control @error('lugar') is-invalid @enderror" required value="{{ old('lugar', $partido->cancha) }}" placeholder="Ej: Estadio Municipal">
@@ -83,7 +71,7 @@
 
                 <div class="d-flex gap-3">
                     <button type="submit" class="btn btn-naranja">Guardar Cambios</button>
-                    <a href="{{ route('campeonatos.show', $partido->campeonato_id) }}" class="btn btn-borde">Cancelar</a>
+                    <a href="{{ route('campeonatos.show', ['campeonato' => $partido->campeonato_id, 'seccion' => 'partidos']) }}" class="btn btn-borde">Cancelar</a>
                 </div>
             </form>
         </div>
@@ -95,10 +83,8 @@ document.getElementById('campeonato_id').addEventListener('change', function(){
     const id = this.value;
     const local = document.getElementById('equipo_local_id');
     const visita = document.getElementById('equipo_visita_id');
-    const arbitro = document.getElementById('arbitro_id');
     local.innerHTML = '<option value="">Elige un equipo</option>';
     visita.innerHTML = '<option value="">Elige un equipo</option>';
-    arbitro.innerHTML = '<option value="">Sin asignar</option>';
     if(id){
         fetch(`{{ url('/api/equipos-campeonato') }}/${id}`)
         .then(res => res.json())
@@ -108,12 +94,7 @@ document.getElementById('campeonato_id').addEventListener('change', function(){
                 visita.innerHTML += `<option value="${eq.id}">${eq.nombre}</option>`;
             });
         });
-        fetch(`{{ url('/api/arbitros-campeonato') }}/${id}`)
-        .then(res => res.json())
-        .then(data => {
-            arbitro.innerHTML = '<option value="">Sin asignar</option>';
-            data.forEach(a => arbitro.innerHTML += `<option value="${a.id}">${a.name} (${a.email})</option>`);
-        });
+
     }
 });
 </script>
