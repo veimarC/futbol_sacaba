@@ -35,8 +35,10 @@ class LoginVerificationTest extends TestCase
         $this->post('/login', ['email' => $user->email, 'password' => 'TestPassword123'])
             ->assertRedirect($missingUrl);
         $this->get($missingUrl)->assertRedirect(route('campeonatos.index'))
-            ->assertSessionHas('mensaje', 'El campeonato solicitado ya no existe. Selecciona uno del listado.');
-        $this->get(route('campeonatos.index'))->assertOk();
+            ->assertSessionHas('info', 'El campeonato solicitado ya no existe. Selecciona uno del listado.');
+        $this->get(route('campeonatos.index'))->assertOk()
+            ->assertSee('El campeonato solicitado ya no existe. Selecciona uno del listado.')
+            ->assertSee('alert-info', false);
 
         $this->getJson($missingUrl)->assertNotFound();
         $this->get(route('campeonatos.edit', 999999))->assertNotFound();

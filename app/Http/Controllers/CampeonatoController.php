@@ -55,8 +55,12 @@ class CampeonatoController extends Controller
             ->where(fn ($q) => $q->whereNull('fecha_limite_inscripcion')->orWhereDate('fecha_limite_inscripcion', '>=', today()))
             ->when($busqueda !== '', fn ($q) => $q->where('nombre', 'like', '%'.$busqueda.'%'))
             ->orderBy('fecha_inicio')
-            ->paginate(9)
-            ->withQueryString();
+            ->get()->filter(fn ($c) => $c->aceptaInscripciones())->values();
+        $campeonatos = new \Illuminate\Pagination\LengthAwarePaginator(
+            $campeonatos->forPage(max(1, $request->integer('page', 1)), 9)->values(),
+            $campeonatos->count(), 9, max(1, $request->integer('page', 1)),
+            ['path' => $request->url(), 'query' => $request->query()]
+        );
 
         return view('campeonatos.descubrir', compact('campeonatos', 'busqueda'));
     }
@@ -182,6 +186,12 @@ class CampeonatoController extends Controller
                 $campeonato->partidos()->with(['fase', 'equipoLocal', 'equipoVisita'])->get()
             );
 
+        $estadisticas = app(\App\Services\EstadisticasCampeonatoService::class)->calcular(
+            $equipos,
+            $campeonato->partidos()->where('estado', 'jugado')
+                ->with(['equipoLocal', 'equipoVisita', 'incidencias'])->get()
+        );
+
         $misEquipos = collect();
         $equipoInscritoEnCampeonato = null;
         if (auth()->user()->rol === \App\Models\User::ROLE_DELEGADO) {
@@ -195,7 +205,7 @@ class CampeonatoController extends Controller
                 true
             ));
         }
-        return view('campeonatos.show', compact('campeonato', 'equipos', 'solicitudesPendientes', 'equiposRetirados', 'partidos', 'etiquetasFases', 'tabla', 'tablasGrupos', 'opcionesClasificados', 'llavesGeneradas', 'faseGruposIniciada', 'configuracionCopaBloqueada', 'goleadores', 'tarjetas', 'mostrarLlaves', 'llaves', 'tercerLugar', 'fases', 'misEquipos', 'equipoInscritoEnCampeonato'));
+        return view('campeonatos.show', compact('campeonato', 'equipos', 'solicitudesPendientes', 'equiposRetirados', 'partidos', 'etiquetasFases', 'tabla', 'tablasGrupos', 'opcionesClasificados', 'llavesGeneradas', 'faseGruposIniciada', 'configuracionCopaBloqueada', 'goleadores', 'tarjetas', 'mostrarLlaves', 'llaves', 'tercerLugar', 'fases', 'misEquipos', 'equipoInscritoEnCampeonato', 'estadisticas'));
     }
 
     public function actualizarClasificados(Request $request, Campeonato $campeonato)
@@ -386,9 +396,21 @@ class CampeonatoController extends Controller
         return redirect()->route('campeonatos.index')->with('mensaje', 'Campeonato eliminado.');
     }
 
-    public function generarFixture(Campeonato $campeonato)
+    public function generarFixture(Request $request, Campeonato $campeonato)
     {
         $this->authorize('generateFixture', $campeonato);
+        if ($campeonato->estado_actual === 'finalizado') {
+            return back()->withErrors(['fixture' => 'No se puede generar el fixture de un campeonato finalizado.']);
+        }
+        $opciones = $request->validate([
+            'cupos_reservados' => 'nullable|integer|min:0|max:32',
+            'jornada_limite' => 'nullable|integer|min:1|max:100',
+        ]);
+        $reservas = (int) ($opciones['cupos_reservados'] ?? 0);
+        $limite = (int) ($opciones['jornada_limite'] ?? 0);
+        if ($reservas && (! $limite || ! in_array($campeonato->formato, ['liga', 'liga_ida_vuelta', 'grupos_eliminacion']))) {
+            return back()->withErrors(['inscripcion' => 'Los cupos requieren una jornada límite y un formato de liga o grupos.'])->withInput();
+        }
         abort_unless($campeonato->aprobacion_estado === 'aprobado', 403, 'El campeonato requiere aprobación.');
         if ($campeonato->fases()->exists() || $campeonato->partidos()->exists()) return back()->withErrors(['error' => 'El fixture ya fue generado.']);
 
@@ -417,18 +439,47 @@ class CampeonatoController extends Controller
         if (! $generador) return back()->withErrors(['error' => 'Este formato todavía no tiene generador automático.']);
 
         try {
-            DB::transaction(function () use ($campeonato, $generador, $configuracion) {
+            DB::transaction(function () use ($campeonato, $generador, $configuracion, $reservas, $limite) {
+                $campeonato = Campeonato::lockForUpdate()->findOrFail($campeonato->id);
+                if ($campeonato->fases()->exists() || $campeonato->partidos()->exists()) {
+                    throw \Illuminate\Validation\ValidationException::withMessages(['fixture' => 'El fixture ya fue generado.']);
+                }
+                if ($campeonato->equipos()->wherePivot('estado', 'pendiente')->exists()) {
+                    throw \Illuminate\Validation\ValidationException::withMessages(['fixture' => 'Revisa todas las solicitudes pendientes antes de generar el fixture.']);
+                }
+                $configuracion = $this->configuracionFormato->calcular($campeonato, $campeonato->equipos()->wherePivot('estado', 'aprobado')->count());
+                if ($reservas) $configuracion['inscripcion_tardia'] = ['cupos_reservados' => $reservas, 'jornada_limite' => $limite];
                 $campeonato->update([
                     'formato_config' => $configuracion,
-                    'inscripciones_abiertas' => false,
+                    'inscripciones_abiertas' => $reservas > 0,
+                    'fecha_limite_inscripcion' => $reservas ? null : $campeonato->fecha_limite_inscripcion,
                 ]);
-                $generador->generate($campeonato, $configuracion);
+                if ($reservas) {
+                    app(\App\Services\InscripcionTardiaService::class)->generar($campeonato, $configuracion, $reservas, $limite);
+                } else {
+                    $generador->generate($campeonato, $configuracion);
+                }
             });
-            return back()->with('mensaje', "Fixture generado automáticamente para {$cantidadEquipos} equipos. Las inscripciones quedaron cerradas.");
+            return back()->with('mensaje', $reservas
+                ? "Fixture generado con {$reservas} cupos reservados. Puedes aprobar nuevos equipos hasta la jornada {$limite}."
+                : "Fixture generado automáticamente para {$cantidadEquipos} equipos. Las inscripciones quedaron cerradas.");
+        } catch (\Illuminate\Validation\ValidationException $e) {
+            return back()->withErrors($e->errors())->withInput();
         } catch (\Throwable $e) {
             report($e);
             return back()->withErrors(['error' => $e->getMessage()]);
         }
+    }
+
+    public function cerrarInscripciones(Campeonato $campeonato)
+    {
+        $this->authorize('update', $campeonato);
+        DB::transaction(function () use ($campeonato) {
+            $actual = Campeonato::lockForUpdate()->findOrFail($campeonato->id);
+            $actual->update(['inscripciones_abiertas' => false]);
+            app(\App\Services\ClasificacionGruposService::class)->generar($actual);
+        });
+        return back()->with('mensaje', 'Inscripciones cerradas. Los cupos vacíos quedan sin utilizar y no generan partidos ni puntos.');
     }
 
     private function eliminarImagenLocalSinInterrumpir(?string $ruta): void

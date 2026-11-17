@@ -91,6 +91,8 @@ class NominaPartidoController extends Controller
         }
 
         DB::transaction(function () use ($partido, $equipo, $seleccionados, $esMesa) {
+            $campeonato = \App\Models\Campeonato::whereKey($partido->campeonato_id)->lockForUpdate()->firstOrFail();
+            app(\App\Services\InscripcionTardiaService::class)->cerrarSiVencio($campeonato);
             $actual = Partido::whereKey($partido->id)->lockForUpdate()->firstOrFail();
             abort_if($actual->estado !== 'programado', 422, 'La nómina ya no puede modificarse.');
             $existente = $actual->nominas()->where('equipo_id', $equipo->id)->first();
@@ -109,6 +111,7 @@ class NominaPartidoController extends Controller
             foreach ($seleccionados as $jugadorId => $dorsal) {
                 $nomina->jugadores()->create(['jugador_id' => $jugadorId, 'dorsal' => $dorsal]);
             }
+            app(\App\Services\InscripcionTardiaService::class)->cerrarSiVencio($campeonato);
         });
 
         if ($esMesa) {
@@ -148,12 +151,19 @@ class NominaPartidoController extends Controller
             return back()->withErrors(['error' => "La nómina necesita al menos {$partido->campeonato->minimo_para_jugar} jugadores."]);
         }
 
-        $nomina->update([
-            'estado' => $datos['estado'],
-            'motivo_respuesta' => $datos['motivo_respuesta'] ?? null,
-            'aprobado_at' => $datos['estado'] === 'aprobada' ? now() : null,
-            'aprobado_por' => $datos['estado'] === 'aprobada' ? auth()->id() : null,
-        ]);
+        DB::transaction(function () use ($partido, $nomina, $datos) {
+            $campeonato = \App\Models\Campeonato::whereKey($partido->campeonato_id)->lockForUpdate()->firstOrFail();
+            $actual = Partido::whereKey($partido->id)->lockForUpdate()->firstOrFail();
+            abort_if($actual->estado !== 'programado', 422, 'El partido ya fue finalizado.');
+            app(\App\Services\InscripcionTardiaService::class)->cerrarSiVencio($campeonato);
+            $nomina->update([
+                'estado' => $datos['estado'],
+                'motivo_respuesta' => $datos['motivo_respuesta'] ?? null,
+                'aprobado_at' => $datos['estado'] === 'aprobada' ? now() : null,
+                'aprobado_por' => $datos['estado'] === 'aprobada' ? auth()->id() : null,
+            ]);
+            app(\App\Services\InscripcionTardiaService::class)->cerrarSiVencio($campeonato);
+        });
 
         $nomina->equipo->delegado?->notify(new NotificacionPlataforma(
             $datos['estado'] === 'aprobada' ? 'Nómina aprobada' : 'Nómina observada',

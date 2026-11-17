@@ -9,6 +9,7 @@ use App\Notifications\NotificacionPlataforma;
 use App\Services\MarcadorPartidoService;
 use App\Services\NotificadorWhatsAppPartido;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\DB;
 
 class PartidoController extends Controller
 {
@@ -40,6 +41,9 @@ class PartidoController extends Controller
         $data = $this->validar($request);
         $campeonato = Campeonato::findOrFail($data['campeonato_id']);
         $this->autorizarCampeonato($campeonato);
+        if (data_get($campeonato->formato_config, 'inscripcion_tardia')) {
+            return back()->withErrors(['campeonato_id' => 'Este campeonato tiene un calendario con cupos reservados. Programa sus partidos existentes; los encuentros de nuevos equipos se crean al aprobarlos.'])->withInput();
+        }
         if ($campeonato->formato === 'grupos_eliminacion' && $campeonato->fases()->where('tipo', 'grupo')->exists()) {
             return back()->withErrors([
                 'campeonato_id' => 'La Copa ya tiene su fixture por grupos. Edita los partidos generados para asignar fecha y cancha.',
@@ -87,7 +91,12 @@ class PartidoController extends Controller
                 'equipo_local_id' => 'No se pueden cambiar el campeonato ni los equipos de un partido con fase, nóminas o incidencias. Solo modifica su programación.',
             ])->withInput();
         }
-        $partido->update($this->datosPartido($data));
+        DB::transaction(function () use ($partido, $data) {
+            $actual = Campeonato::whereKey($partido->campeonato_id)->lockForUpdate()->firstOrFail();
+            app(\App\Services\InscripcionTardiaService::class)->cerrarSiVencio($actual);
+            $partido->update($this->datosPartido($data));
+            app(\App\Services\InscripcionTardiaService::class)->cerrarSiVencio($actual);
+        });
         $programacionCambio = $partido->wasChanged([
             'equipo_local_id',
             'equipo_visita_id',
@@ -107,6 +116,9 @@ class PartidoController extends Controller
         $this->autorizarCampeonato($partido->campeonato);
         if ($partido->estado !== 'programado') return redirect()->route('partidos.nominas.index', $partido)->withErrors(['error' => 'No se puede eliminar un partido jugado.']);
         $campeonato = $partido->campeonato;
+        if (data_get($campeonato->formato_config, 'inscripcion_tardia') && $partido->fase_id) {
+            return back()->withErrors(['partido' => 'No se puede eliminar un encuentro del calendario con cupos reservados. Puedes reprogramarlo.']);
+        }
         $partido->delete();
         return redirect()->route('campeonatos.show', ['campeonato' => $campeonato, 'seccion' => 'partidos'])->with('mensaje', 'Partido eliminado.');
     }
@@ -158,6 +170,7 @@ class PartidoController extends Controller
             $resolucion = app(\App\Services\ResolucionEliminatoriaService::class);
             $penales = $resolucion->validar($actual, $datos);
             $actual->update($penales + ['estado' => 'jugado']);
+            app(\App\Services\InscripcionTardiaService::class)->cerrarSiVencio($actual->campeonato);
             app(\App\Services\ClasificacionGruposService::class)->generar($actual->campeonato);
             $resolucion->avanzar($actual);
         });

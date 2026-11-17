@@ -40,7 +40,7 @@ class EquipoController extends Controller
 
     public function create(Request $request)
     {
-        $campeonatos = $this->campeonatosAbiertos()->get();
+        $campeonatos = $this->campeonatosAbiertos()->get()->filter(fn ($c) => $c->aceptaInscripciones());
         $campeonatoSeleccionado = $request->query('campeonato');
         $campeonatoElegido = $campeonatoSeleccionado
             ? $campeonatos->firstWhere('id', (int) $campeonatoSeleccionado)
@@ -94,6 +94,12 @@ class EquipoController extends Controller
 
         try {
             $equipo = DB::transaction(function () use ($data, $campeonato, $nuevoEscudo) {
+                if ($campeonato) {
+                    $campeonato = Campeonato::lockForUpdate()->findOrFail($campeonato->id);
+                    if (! $campeonato->aceptaInscripciones() || $this->delegadoYaParticipa($campeonato, auth()->id())) {
+                        throw \Illuminate\Validation\ValidationException::withMessages(['campeonato_id' => 'La inscripción ya no está disponible o ya participas con otro equipo.']);
+                    }
+                }
                 $equipo = Equipo::create([
                     'nombre' => $data['nombre'],
                 // Mantiene poblada la columna histórica mientras la relación
@@ -282,9 +288,14 @@ class EquipoController extends Controller
 
     public function solicitarInscripcion(Request $request)
     {
+        return DB::transaction(fn () => $this->registrarSolicitud($request));
+    }
+
+    private function registrarSolicitud(Request $request)
+    {
         $data = $request->validate(['equipo_id' => 'required|exists:equipos,id', 'campeonato_id' => 'required|exists:campeonatos,id']);
         $equipo = Equipo::findOrFail($data['equipo_id']);
-        $campeonato = Campeonato::findOrFail($data['campeonato_id']);
+        $campeonato = Campeonato::lockForUpdate()->findOrFail($data['campeonato_id']);
         abort_unless((int) $equipo->delegado_id === (int) auth()->id(), 403);
         if (! $this->aceptaInscripciones($campeonato)) {
             return back()->withErrors(['error' => 'Las inscripciones están cerradas.']);
@@ -329,7 +340,20 @@ class EquipoController extends Controller
         $data = $request->validate(['estado' => 'required|in:aprobado,rechazado']);
         abort_unless(auth()->user()->esDesarrollador() || (int) $campeonato->usuario_creador === (int) auth()->id(), 403);
         abort_unless($campeonato->equipos()->whereKey($equipo->id)->exists(), 404);
-        $campeonato->equipos()->updateExistingPivot($equipo->id, ['estado' => $data['estado']]);
+        DB::transaction(function () use ($campeonato, $equipo, $data) {
+            $actual = Campeonato::lockForUpdate()->findOrFail($campeonato->id);
+            $estado = $actual->equipos()->whereKey($equipo->id)->value('campeonato_equipo.estado');
+            if ($estado !== 'pendiente') {
+                throw \Illuminate\Validation\ValidationException::withMessages(['equipo_id' => 'Solo se pueden resolver solicitudes pendientes.']);
+            }
+            if ($data['estado'] === 'aprobado') {
+                if ($this->delegadoYaParticipa($actual, $equipo->delegado_id, $equipo->id) || $this->ciDuplicadaAlInscribir($equipo, $actual)) {
+                    throw \Illuminate\Validation\ValidationException::withMessages(['equipo_id' => 'El delegado o un jugador ya participa con otro equipo.']);
+                }
+                app(\App\Services\InscripcionTardiaService::class)->incorporar($actual, $equipo);
+            }
+            $actual->equipos()->updateExistingPivot($equipo->id, ['estado' => $data['estado']]);
+        });
         if ($equipo->delegado) {
             $aprobado = $data['estado'] === 'aprobado';
             $equipo->delegado->notify(new NotificacionPlataforma(
@@ -399,10 +423,7 @@ class EquipoController extends Controller
 
     private function aceptaInscripciones(Campeonato $campeonato): bool
     {
-        return $campeonato->aprobacion_estado === 'aprobado'
-            && $campeonato->estado_actual !== 'finalizado'
-            && $campeonato->inscripciones_abiertas
-            && (! $campeonato->fecha_limite_inscripcion || now()->lte($campeonato->fecha_limite_inscripcion->endOfDay()));
+        return $campeonato->aceptaInscripciones();
     }
 
     private function delegadoYaParticipa(Campeonato $campeonato, int $delegadoId, ?int $exceptoEquipoId = null): bool

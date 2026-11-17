@@ -13,6 +13,9 @@ class ClasificacionGruposService
     {
         return DB::transaction(function () use ($campeonato) {
             $campeonato = Campeonato::whereKey($campeonato->id)->lockForUpdate()->firstOrFail();
+            if (data_get($campeonato->formato_config, 'inscripcion_tardia') && $campeonato->aceptaInscripciones()) {
+                return false;
+            }
             if ($campeonato->formato !== 'grupos_eliminacion'
                 || $campeonato->aprobacion_estado !== 'aprobado'
                 || $campeonato->fases()->where('tipo', 'eliminacion')->whereHas('partidos')->exists()) {

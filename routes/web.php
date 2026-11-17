@@ -60,7 +60,7 @@ Route::middleware('auth')->group(function () {
         ->missing(function (\Illuminate\Http\Request $request) {
             if ($request->routeIs('campeonatos.show') && ! $request->expectsJson()) {
                 return redirect()->route('campeonatos.index')
-                    ->with('mensaje', 'El campeonato solicitado ya no existe. Selecciona uno del listado.');
+                    ->with('info', 'El campeonato solicitado ya no existe. Selecciona uno del listado.');
             }
 
             abort(404);
@@ -69,6 +69,8 @@ Route::middleware('auth')->group(function () {
     // Generar fixture automático según el formato del campeonato
     Route::post('campeonatos/{campeonato}/generar-fixture', [CampeonatoController::class, 'generarFixture'])
         ->name('campeonatos.generarFixture');
+    Route::post('campeonatos/{campeonato}/cerrar-inscripciones', [CampeonatoController::class, 'cerrarInscripciones'])
+        ->name('campeonatos.cerrarInscripciones');
 
     Route::patch('campeonatos/{campeonato}/clasificados-por-grupo', [CampeonatoController::class, 'actualizarClasificados'])
         ->name('campeonatos.actualizarClasificados');

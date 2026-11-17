@@ -143,6 +143,7 @@
                 <button class="championship-tab module-tab" type="button" data-bs-toggle="tab" data-bs-target="#tab"><i class="bi bi-bar-chart-steps"></i> Tabla</button>
                 @endif
                 @if($mostrarLlaves)<button class="championship-tab module-tab" type="button" data-bs-toggle="tab" data-bs-target="#llaves"><i class="bi bi-diagram-3-fill"></i> Llaves</button>@endif
+                <button id="estadisticas-tab" class="championship-tab module-tab" type="button" role="tab" aria-controls="estadisticas" aria-selected="false" data-bs-toggle="tab" data-bs-target="#estadisticas"><i class="bi bi-bar-chart-fill"></i> Estadísticas</button>
                 <button class="championship-tab module-tab" type="button" data-bs-toggle="tab" data-bs-target="#goleadores"><i class="bi bi-award-fill"></i> Goleadores</button>
                 <button class="championship-tab module-tab" type="button" data-bs-toggle="tab" data-bs-target="#tarjetas"><i class="bi bi-card-list"></i> Tarjetas</button>
             </div>
@@ -151,6 +152,9 @@
     <!-- Contenido -->
     <main>
         <div class="container">
+            @if(session('info'))
+                <div class="alert alert-info alert-dismissible fade show" role="status"><i class="bi bi-info-circle me-2"></i>{{ session('info') }}<button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Cerrar mensaje"></button></div>
+            @endif
             @if(session('mensaje') || session('success'))
                 <div class="alert alert-success alert-dismissible fade show animar-aparecer" role="status"><i class="bi bi-check-circle-fill me-2"></i>{{ session('mensaje') ?: session('success') }}<button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Cerrar mensaje"></button></div>
             @endif

@@ -46,6 +46,7 @@ class PartidoWalkoverController extends Controller
                 'wo_registrado_por' => $user->id,
                 'wo_registrado_at' => now(),
             ]);
+            app(\App\Services\InscripcionTardiaService::class)->cerrarSiVencio($campeonato);
             app(ClasificacionGruposService::class)->generar($campeonato);
             app(\App\Services\ResolucionEliminatoriaService::class)->avanzar($partido);
         });

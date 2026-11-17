@@ -13,6 +13,11 @@ use Illuminate\Database\Eloquent\Model;
  */
 class Campeonato extends Model
 {
+    public function aceptaInscripciones(): bool
+    {
+        return app(\App\Services\InscripcionTardiaService::class)->motivoCierre($this) === null;
+    }
+
     public function tieneTablaPosiciones(): bool
     {
         return in_array($this->formato, ['liga', 'liga_ida_vuelta', 'grupos_eliminacion', 'series_interseries', 'liga_semifinal_final'], true);

@@ -1,0 +1,32 @@
+.championship-stats {
+    padding: clamp(18px, 3vw, 32px);
+    border: 1px solid #dbe3ee;
+    border-radius: 18px;
+    background: #f4f7fb;
+    color: #172b4d;
+    text-shadow: none;
+    box-shadow: 0 12px 32px rgb(8 28 58 / 18%);
+}
+.championship-stats .module-heading h5 { color: #102e5c; font-weight: 800; }
+.championship-stats .module-heading p { color: #52627a; opacity: 1 !important; }
+.championship-stats .stats-metric { border: 1px solid #e0e6ef; border-top: 3px solid #245ba5; background: #fff; }
+.championship-stats .stats-metric .small { color: #52627a; opacity: 1 !important; }
+.championship-stats .stats-metric strong { color: #102e5c; font-variant-numeric: tabular-nums; }
+.championship-stats .stats-chart { border: 1px solid #e0e6ef; background: #fff; }
+.championship-stats .stats-chart h6 { color: #102e5c; }
+.stats-bar-row { padding: 12px 0; border-bottom: 1px solid #edf1f6; }
+.stats-bar-row:last-child { border-bottom: 0; }
+.stats-team-label { display: flex; align-items: center; gap: 10px; min-width: 0; }
+.championship-stats .stats-team-label .team-crest { width: 34px; height: 34px; flex: 0 0 34px; border-radius: 8px; background: #edf1f7; box-shadow: none; }
+.championship-stats .stats-team-label .team-crest img { width: 100%; height: 100%; object-fit: contain; }
+.stats-bar-row > div:first-child { color: #283d5b; font-size: .9rem; font-weight: 600; }
+.championship-stats .progress { height: 12px; border-radius: 4px; background: #edf1f7; }
+.championship-stats .progress-bar { border-radius: 4px; background: #245ba5; }
+.stats-notes { color: #52627a; font-size: .8rem; }
+.stats-notes summary { cursor: pointer; width: fit-content; }
+.stats-notes p { max-width: 85ch; line-height: 1.6; }
+@media (min-width: 768px) {
+    .stats-bar-row { position: relative; display: grid; grid-template-columns: minmax(140px, 220px) minmax(0, 1fr); align-items: center; gap: 20px; padding-right: 44px; min-height: 48px; }
+    .stats-bar-row > div:first-child { margin-bottom: 0 !important; }
+    .stats-bar-row strong { position: absolute; right: 0; top: 50%; transform: translateY(-50%); }
+}

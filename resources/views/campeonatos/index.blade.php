@@ -20,11 +20,6 @@
         @endcan
     </div>
 
-    @if(session('mensaje'))
-        <div class="alert alert-success mb-4 success-glass">
-            {{ session('mensaje') }}
-        </div>
-    @endif
 
     @if($campeonatos->isEmpty())
         <div class="text-center py-5">

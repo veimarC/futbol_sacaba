@@ -87,8 +87,17 @@
             @if(auth()->check() && (auth()->user()->rol === \App\Models\User::ROLE_DESARROLLADOR || (auth()->user()->rol === \App\Models\User::ROLE_ORGANIZADOR && $campeonato->usuario_creador == auth()->id())))
                 {{-- Botón rápido para generar fixture si el formato es liga --}}
                 @if($campeonato->aprobacion_estado === 'aprobado' && in_array($campeonato->formato, ['liga','liga_ida_vuelta','eliminacion','grupos_eliminacion']) && $fases->isEmpty() && $partidos->isEmpty())
-                    <form action="{{ route('campeonatos.generarFixture', $campeonato) }}" method="POST" onsubmit="return confirm('La configuración se calculará con los equipos aprobados y se cerrarán las inscripciones. ¿Deseas generar el fixture?')" class="ms-2">
+                    <form action="{{ route('campeonatos.generarFixture', $campeonato) }}" method="POST" onsubmit="return confirm('Se generará el calendario definitivo. Los cupos y la jornada límite no podrán cambiarse después. ¿Continuar?')" class="ms-2">
                         @csrf
+                        @if(in_array($campeonato->formato, ['liga', 'liga_ida_vuelta', 'grupos_eliminacion']))
+                            <div class="p-3 mb-2 rounded bg-dark" style="max-width: 380px;">
+                                <label for="cupos_reservados" class="form-label">Cupos para equipos que ingresen después</label>
+                                <input id="cupos_reservados" name="cupos_reservados" type="number" min="0" max="32" value="{{ old('cupos_reservados', 0) }}" class="form-control mb-2">
+                                <label for="jornada_limite" class="form-label">Inscripciones hasta la jornada</label>
+                                <input id="jornada_limite" name="jornada_limite" type="number" min="1" max="100" value="{{ old('jornada_limite', 1) }}" class="form-control">
+                                <p class="small mt-2 mb-0">Con 0 cupos se cierran las inscripciones. Si reservas cupos, el límite por jornada reemplaza la fecha de inscripción. Se cierra al comenzar un partido de una jornada posterior, incluso si tiene nóminas aprobadas. Los nuevos partidos deberán programarse.</p>
+                            </div>
+                        @endif
                         <button class="btn btn-sm btn-success"><i class="bi bi-magic me-1"></i>Configurar y generar fixture</button>
                     </form>
                 @endif
@@ -99,11 +108,27 @@
     @include('campeonatos.aprobacion')
 
     @if($campeonato->aprobacion_estado === 'aprobado')
+    @if($politicaInscripcion = data_get($campeonato->formato_config, 'inscripcion_tardia'))
+        @php
+            $servicioInscripcion = app(\App\Services\InscripcionTardiaService::class);
+            $motivoCierreInscripcion = $servicioInscripcion->motivoCierre($campeonato);
+        @endphp
+        <div class="alert alert-info mb-4 enrollment-policy">
+            <strong>Inscripciones hasta la jornada {{ $politicaInscripcion['jornada_limite'] }}</strong>
+            <p class="mb-1">{{ $motivoCierreInscripcion ?? 'Inscripciones abiertas.' }} · Cupos sin ocupar: {{ $servicioInscripcion->cuposDisponibles($campeonato) }}.</p>
+            <p class="small mb-0">Las solicitudes deben aprobarse dentro del plazo. Los encuentros de los nuevos equipos conservan su jornada y quedan sin fecha para reprogramarlos. Los cupos que no se ocupen no otorgan puntos ni W.O.</p>
+            @can('update', $campeonato)
+                @if($campeonato->inscripciones_abiertas)
+                    <form method="POST" action="{{ route('campeonatos.cerrarInscripciones', $campeonato) }}" class="mt-2" data-confirm="¿Cerrar definitivamente las inscripciones y dejar sin utilizar los cupos vacíos?">
+                        @csrf<button class="btn btn-sm btn-outline-primary">Cerrar inscripciones definitivamente</button>
+                    </form>
+                @endif
+            @endcan
+        </div>
+    @endif
     @if(auth()->user()->rol === \App\Models\User::ROLE_DELEGADO)
         @php
-            $inscripcionDisponible = $campeonato->estado_actual !== 'finalizado'
-                && $campeonato->inscripciones_abiertas
-                && (!$campeonato->fecha_limite_inscripcion || now()->lte($campeonato->fecha_limite_inscripcion->endOfDay()));
+            $inscripcionDisponible = $campeonato->aceptaInscripciones();
         @endphp
         <section class="delegate-enrollment mb-4">
             <div class="d-flex flex-column flex-lg-row justify-content-between gap-3 mb-3">
@@ -121,7 +146,8 @@
 
             @if(!$inscripcionDisponible)
                 <div class="alert alert-warning mb-0"><i class="bi bi-lock-fill me-2"></i>Las inscripciones para este campeonato están cerradas.</div>
-            @elseif($misEquipos->isEmpty())
+            @endif
+            @if($misEquipos->isEmpty() && $inscripcionDisponible)
                 <div class="enrollment-empty text-center py-4">
                     <i class="bi bi-shield-plus fs-1 text-warning"></i>
                     <p class="mt-2 mb-3">Todavía no tienes un equipo. Créalo y quedará vinculado a este campeonato.</p>
@@ -162,7 +188,7 @@
                                 <div class="mt-3">
                                     @if($yaParticipaConOtro)
                                         <button class="btn btn-light w-100" disabled><i class="bi bi-shield-check me-1"></i> Ya tienes un registro con {{ $equipoInscritoEnCampeonato->nombre }}</button>
-                                    @elseif(!$estadoSolicitud || $estadoSolicitud === 'rechazado')
+                                    @elseif((!$estadoSolicitud || $estadoSolicitud === 'rechazado') && $inscripcionDisponible)
                                         <form method="POST" action="{{ route('equipos.solicitarInscripcion') }}">
                                             @csrf
                                             <input type="hidden" name="equipo_id" value="{{ $miEquipo->id }}">
@@ -176,7 +202,7 @@
                                             <strong><i class="bi bi-info-circle me-1"></i> Retirado del campeonato</strong>
                                             <div class="small mt-1">{{ $registro->pivot->motivo_retiro }}</div>
                                         </div>
-                                    @else
+                                    @elseif($estadoSolicitud === 'aprobado')
                                         <a href="{{ route('equipos.show', [$miEquipo, 'campeonato' => $campeonato->id]) }}" class="btn btn-success w-100"><i class="bi bi-check-circle me-1"></i> Ver mi equipo inscrito</a>
                                     @endif
                                 </div>
@@ -227,7 +253,7 @@
         <div class="tab-pane fade {{ $mostrarPartidosInicialmente ? '' : 'show active' }}" id="eq">
             <div class="teams-heading d-flex justify-content-between align-items-center mb-3">
                 <h5 class="fw-semibold">Equipos inscritos en este torneo</h5>
-                @if($campeonato->estado_actual === 'pendiente'
+                @if($campeonato->aceptaInscripciones()
                     && auth()->user()->rol === \App\Models\User::ROLE_DELEGADO
                     && !$equipoInscritoEnCampeonato)
                     <a href="{{ route('equipos.create') }}?campeonato={{ $campeonato->id }}" class="btn btn-naranja btn-sm shadow-sm">
@@ -556,6 +582,10 @@
             </div>
         @endif
 
+        <div class="tab-pane fade" id="estadisticas" role="tabpanel" aria-labelledby="estadisticas-tab" tabindex="0">
+            @include('campeonatos.partials.estadisticas')
+        </div>
+
         <div class="tab-pane fade" id="goleadores">
             <div class="module-heading mb-3">
                 <h5 class="fw-semibold mb-1">Goleadores</h5>
@@ -626,7 +656,7 @@ document.addEventListener('DOMContentLoaded', function(){
     });
 
     // ✅ 1. MENSAJES: Desaparecen solos a los 4 segundos
-    const alertas = document.querySelectorAll('.alert');
+    const alertas = document.querySelectorAll('.alert:not(.enrollment-policy)');
     alertas.forEach(alerta => {
         setTimeout(() => {
             alerta.classList.remove('show');
